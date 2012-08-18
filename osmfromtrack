@@ -1,0 +1,102 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# file name: ''osmfromtrack''
+#   project: osmfromtrack
+#  function: Download OSM data around a GPX track
+#
+#      created: 2012-08-18
+#  last change: $LastChangedRevision$
+#
+# Copyright (C) 2012 Robert Lange (robert.lange@s1999.tu-chemnitz.de)
+# Licensed under the GNU General Public License, version 2
+# http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+#
+
+
+
+# *** Import modules
+# To control output level easily
+import logging
+# Argument parser
+import argparse
+# Regular Expressions
+# import re
+# Spawn sub-process
+import subprocess
+
+
+# ******************************************************************************
+# *** Global settings as dictionary
+# opt = {'jack': 4098,
+#        'sape': 4139}
+
+# Provide logging shortcuts
+pinfo  = logging.info
+pwarn  = logging.warning
+perror = logging.error
+
+
+# ******************************************************************************
+# *** Exception Objects
+
+#TEMPLATE class ExtractMailError(BaseException):
+#TEMPLATE    """Exception Class for function extract_mail_content
+#TEMPLATE 
+#TEMPLATE    These raised errors are not critical, they signal that the processing
+#TEMPLATE    should be aborted here.
+#TEMPLATE    """
+#TEMPLATE    pass
+
+
+# ********************************************************************************
+# *** Objects
+# ...
+
+# ******************************************************************************
+# *** Functions
+# ...
+
+
+
+# ********************************************************************************
+
+# *** Main Program
+def main():
+
+    # *** Command line parsing
+    # cmd_usage="usage: %prog [options] args"
+    # For now, just fetch a rectangle by its coordinates
+    cmd_desc ="""Download OSM data from a coordinate box
+Supply with two set of coorinates (like from Google Map's LatLng marker)
+and the box will be fetched from OSM.
+Example: %(prog)s 61.001 22.758 60.948 22.871"""
+    # cmd_desc ="""osmfromtrack - Download OSM data around a GPX track"""
+    cmd_version="%(prog)s " + __version__
+    cmd_parser = argparse.ArgumentParser(description=cmd_desc,
+                 formatter_class=argparse.RawDescriptionHelpFormatter)  # With pre-formatted description
+    cmd_parser.add_argument('latitude1', type=float, help='Latitude of first point')
+    cmd_parser.add_argument('longitude1', type=float, help='Longitude of first point')
+    cmd_parser.add_argument('latitude2', type=float, help='Latitude of second point')
+    cmd_parser.add_argument('longitude2', type=float, help='Longitude of second point')
+    cmd_parser.add_argument('-V', '--version', action='version', version=cmd_version)
+    cmd_parser.add_argument('--quiet', '-q', dest='quiet', action='store_true',
+                        default=False, help='quiet output')
+    # more options to add
+    cmd_line = cmd_parser.parse_args()
+
+    # Setup logging: Show only from warnings when being QUIET
+    logging.basicConfig(level=logging.WARNING if cmd_line.quiet else logging.INFO,
+                    format="%(message)s")
+
+    # Abort when failure in command line - now handled by argparse
+
+    # All done, over and out
+    return 0
+
+
+# *** Call Main program
+__version__ = filter(str.isdigit, "$LastChangedRevision$")
+if not __version__:
+    __version__='DEV'
+if __name__ == "__main__":
+    main()
