@@ -31,21 +31,57 @@ which I can then download to my Garmin eTrex30 to have the map
 material for my next trip available.
 
 
+Topographic Map Configuration for Debian
+========================================
+See also
+    http://wiki.openstreetmap.org/wiki/Topographic_maps_for_garmin_devices
 
-Brainstorming
-=============
-Manual data fetching with OSM (X)API:
-- Example export from www.openstreetmap.org
-       47.1916
-9.8237		9.8746
-	47.1423
-
-- bbox = left,down,right,up
-
-API - Data identical
-curl --location --globoff -o map-osm-api.osm  'http://api.openstreetmap.org/api/0.6/map?bbox=9.8237,47.1423,9.8746,47.1916'
-
-XAPI - Seems to be reordered compared to API result, but content-wise identical
-curl --location --globoff -o map-osm-xapi.osm  'http://open.mapquestapi.com/xapi/api/0.6/map?bbox=9.8237,47.1423,9.8746,47.1916'
+To create a topographic map you need the tool phyghtmap.
+If you don't want this, just use the command line option "--no-topo"
 
 
+How to setup phyghtmap with debian (other OS may vary)
+- Get DEB packet of phyghtmap from http://katze.tfiu.de/projects/phyghtmap/
+  e.g. http://katze.tfiu.de/projects/phyghtmap/phyghtmap_1.43-1_all.deb
+- Install, e.g.
+  sudo dpkg -i  phyghtmap_1.43-1_all.deb 
+- For Version 1.43 you manually need to repair some things
+- If you get the error
+  File "/usr/bin/phyghtmap", line 5, in <module>
+    from pkg_resources import load_entry_point
+  ImportError: No module named pkg_resources
+  ---> Solution: sudo aptitude install python-pkg-resources
+- If you get the error
+  File "/usr/lib/python2.7/dist-packages/pkg_resources.py", line 584, in resolve
+    raise DistributionNotFound(req)
+    pkg_resources.DistributionNotFound: phyghtmap==1.43
+  ---> Solution:
+       cd ../../python2.7/dist-packages/
+       sudo ln -s ../../python2.6/dist-packages/phyghtmap
+       sudo ln -s ../../python2.6/dist-packages/phyghtmap-1.43.egg-info/
+
+A sample call as done by osmfromtrack:
+  phyghtmap --area=9.755300:47.478000:9.804400:47.502600 --step=50 -o srtmtest \
+  --line-cat=400,100 --jobs=2  --viewfinder-mask=1
+
+Configuration can be done at the top of osmfromtrack file, look for 'topo_opts'
+
+
+Further Brainstorming
+=====================
+Improve etrex30 (currently unreleased, will come somewhen later)
+to automatically assemble Garmin Map file with topographic overlay
+
+Assemply with mkgmap - the number file names are mandatory
+1.) Convert "nomrmal" OSMs
+    mkgmap --draw-priority=25 60000000.osm
+    --> 60000000.osm
+2.) Convert Topo-OSMs
+    mkgmap --draw-priority=100 --transparent 50000000.osm
+    --> 50000000.img
+3.) Merge
+     mkgmap -n 63240991 --description="Mapname Topo" --latin1 --gmapsupp \
+      	                --remove-short-arcs=3 --route \
+		        --family-id=60 --product-id=1 6*.img \
+		        --family-id=50 --product-id=1 5*.img
+    --> gmapsupp.img

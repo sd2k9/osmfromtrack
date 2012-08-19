@@ -24,7 +24,7 @@ import re
 # OS operation
 import os
 # Spawn sub-process
-# import subprocess
+import subprocess
 # Fetching OSM Data
 import urllib2
 
@@ -35,7 +35,19 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         # Will be used with format()
         'xapi_url': 'http://open.mapquestapi.com/xapi/api/0.6/map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Test mode - only echo commands, will be set by command line
-        'test': False
+        'test': False,
+        # Create Topographic map also - can be unset by command line
+        'topo': True,
+
+        # Command for Topographic Map creation: phyghtmap
+        'topo_cmd': 'phyghtmap',
+        # Default options for phyghtmap
+        'topo_opts': [ "--step=50",
+                      "--line-cat=400,100", "--jobs=2", "--viewfinder-mask=1" ],
+        # Area to process, will be used with format()
+        'topo_area': '--area={west:f}:{south:f}:{east:f}:{north:f}',
+        # Output base file name, will be used with format()
+        'topo_output': '-o {outbase:s}',
        }
 
 # Provide logging shortcuts
@@ -45,16 +57,86 @@ perror = logging.error
 
 
 # ******************************************************************************
-# *** Exception Objects
+# *** Exception Objects - they should be improved to also include the error reason
 
 class OutputFileExists(BaseException):
     """Exception Class for existing output file
+    """
+    pass
+class ExecuteCommandFailed(BaseException):
+    """Exception Class for failed program execution
     """
     pass
 
 
 # ********************************************************************************
 # *** Objects
+
+class Coord():
+   """GPX coordinates, consisting of longitude and latitude
+   """
+   # C'Tor with arguments longitude and latitude
+   def __init__(self, lat = 0, lon = 0):
+       self.lat = lat
+       self.lon = lon
+   # Latitude
+   # lat
+   # Longitude
+   # lon
+
+class ExecTopoCmd():
+   """Execute the topographic map creation tool
+
+   Should be used together with the "with" statement:
+        with ExecTopoCmd() as topo_tool:
+            pass
+   Why "with"? Just for fun and playing around with it ^_^
+
+   C'tor Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
+             outbase - Output file name base, to write the OSM data to
+
+   Return: Nothing
+   """
+   # C'Tor with arguments
+   def __init__(self, pos1, pos2, outbase):
+       # Preprocessing - match coords to box boundaries
+       (self._west, self._east, self._north, self._south) = coord_order(pos1, pos2)
+       # And store filebase
+       self._outbase = outbase
+
+   # Start of with processing
+   def __enter__(self):
+       # Call to  phyghtmap with default arguments (see opts) and the
+       # --area=LEFT:BOTTOM:RIGHT:TOP and -o output_base
+
+       # Then execute it
+       try:
+           execute_cmd(opts['topo_cmd'], opts['topo_opts'] +
+              [ opts['topo_area'].format(west=self._west, east=self._east, north=self._north, south=self._south), 
+                opts['topo_output'].format(outbase=self._outbase) ]
+              )
+       except ExecuteCommandFailed:
+           raise    # Error already printed, that's it for us
+       except:   # Other error
+           perror("   Execution failed!")
+           raise
+
+       return self
+
+   # End of with processing - kinda destructor
+   def __exit__(self, type, value, traceback):
+       pass
+
+
+
+
+
+
+
+
+# ******************************************************************************
+# *** Functions
+
 def relax_float(string):
    """A relaxed float representation, which also understands "," as separator
 
@@ -73,33 +155,62 @@ def relax_float(string):
    # else we have succeeded
    return val
 
+def execute_cmd(cmd, args):
+    """Execute the given command and raises an ExecuteCommandFailed upon failure
 
-class Coord():
-   """GPX coordinates, consisting of longitude and latitude
-   """
-   # C'Tor with arguments longitude and latitude
-   def __init__(self, lat = 0, lon = 0):
-       self.lat = lat
-       self.lon = lon
-   # Latitude
-   # lat
-   # Longitude
-   # lon
+    Argument: Command to execute
+              Its arguments as list
+
+    Return: Nothing
+    """
+
+    # Echo
+    pinfo("   Executing " + cmd + " " + " ".join(args) )
+
+    # Execute and print output
+    if not opts['test']:  # Not in testmode
+        try:
+            retcode = subprocess.call([cmd] + args, shell=False)
+            if retcode < 0:
+                perror("   cmd {0} was terminated by signal {1} ".format(cmd, str(-retcode)))
+                raise ExecuteCommandFailed()
+            elif retcode > 0:
+                perror("   cmd {0} retunred error code {1} ".format(cmd, str(retcode)))
+                raise ExecuteCommandFailed()
+        except OSError as e:
+            perror("   cmd {0} execution failed: {1}".format(cmd, str(e)))
+            raise ExecuteCommandFailed()
+        except:
+            raise   # Other errors are passed further
+
+    # Done
+    return
 
 
-# ******************************************************************************
-# *** Functions
+def coord_order(pos1, pos2):
+    """Sort the coordinates into the right order
 
-# def execute_cmd(cmd, *args):
-#     """Execute the given command and abort on error with an error message
-# 
-#     Argument: Command to execute
-#               Its arguments
-# 
-#     Return: Nothing
-#     """
-#     # TODO - see also tweetfile
-#     pass
+    Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
+
+    Return: Coordinates sorted as
+            (west, east, north, south)
+    """
+    # Preprocessing - match coords to box boundaries
+    # west/east
+    if pos1.lon > pos2.lon:
+        west = pos2.lon
+        east = pos1.lon
+    else:
+        west = pos1.lon
+        east = pos2.lon
+    # north/south
+    if pos1.lat > pos2.lat:
+        north = pos1.lat
+        south = pos2.lat
+    else:
+        north = pos2.lat
+        south = pos1.lat
+    return (west, east, north, south)
 
 def get_osm_data(pos1, pos2, outfile):
     """Download OSM data from a box into a file
@@ -124,20 +235,7 @@ def get_osm_data(pos1, pos2, outfile):
     # curl --location --globoff -o map-osm-xapi.osm  'http://open.mapquestapi.com/xapi/api/0.6/map?bbox=9.8237,47.1423,9.8746,47.1916'
 
     # Preprocessing - match coords to box boundaries
-    # west/east
-    if pos1.lon > pos2.lon:
-        west = pos2.lon
-        east = pos1.lon
-    else:
-        west = pos1.lon
-        east = pos2.lon
-    # north/south
-    if pos1.lat > pos2.lat:
-        north = pos1.lat
-        south = pos2.lat
-    else:
-        north = pos2.lat
-        south = pos1.lat
+    (west, east, north, south) = coord_order(pos1, pos2)
     # The URL constructed
     url_str = opts['xapi_url'].format(west=west, east=east, north=north, south=south)
 
@@ -205,6 +303,32 @@ def get_osm_data(pos1, pos2, outfile):
     return
 
 
+def get_topo_data(pos1, pos2, outbase):
+    """Create OSM Topographic data from a box into a file
+
+    Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
+              outbase - Output file name base, to write the OSM data to
+
+    Return: Nothing
+    """
+
+    # Call Sub-Program with the help of a context manager
+    pinfo("Creating topographic map data with " + opts['topo_cmd'])
+    try:
+        with ExecTopoCmd(pos1, pos2, outbase) as topo_tool:
+            pass
+    except ExecuteCommandFailed:
+        # Already consumed, no more printing
+        return
+    except:
+        perror("   Execution failed!")
+        raise
+
+    # Over and out
+    pinfo("   Done!")
+    return
+
+
 # ********************************************************************************
 
 # *** Main Program
@@ -216,12 +340,13 @@ def main():
     cmd_desc ="""Download OSM data from a coordinate box
 Supply with two set of coorinates (like from Google Map's LatLng marker)
 and the box will be fetched from OSM.
-Example: %(prog)s data.osm 61.001 22.758 60.948 22.871"""
+When not disabled, also the topographic data will be created
+Example: %(prog)s data 61.001 22.758 60.948 22.871"""
     # cmd_desc ="""osmfromtrack - Download OSM data around a GPX track"""
     cmd_version="%(prog)s " + __version__
     cmd_parser = argparse.ArgumentParser(description=cmd_desc,
                  formatter_class=argparse.RawDescriptionHelpFormatter)  # With pre-formatted description
-    cmd_parser.add_argument('file', help='Output file name')
+    cmd_parser.add_argument('filebase', help='Output file name base - no suffix please')
     cmd_parser.add_argument('latitude1', type=relax_float, help='Latitude of first point')
     cmd_parser.add_argument('longitude1', type=relax_float, help='Longitude of first point')
     cmd_parser.add_argument('latitude2', type=relax_float, help='Latitude of second point')
@@ -231,6 +356,8 @@ Example: %(prog)s data.osm 61.001 22.758 60.948 22.871"""
                         default=False, help='quiet output')
     cmd_parser.add_argument('--test', '--dry-run', '-t', dest='test', action='store_true',
                         default=False, help='Test mode - only echo commands')
+    cmd_parser.add_argument('--no-topo', dest='topo', action='store_false',
+                        default=True, help='Do not create a topographic map overlay')
     # Parse - abort on failure
     cmd_line = cmd_parser.parse_args()
 
@@ -239,13 +366,22 @@ Example: %(prog)s data.osm 61.001 22.758 60.948 22.871"""
                     format="%(message)s")
     # Set test mode
     opts['test'] = cmd_line.test
+    # (Un)Set topo map creation
+    opts['topo'] = cmd_line.topo
 
     # Get the data from the OSM XAPI
     get_osm_data( Coord(cmd_line.latitude1, cmd_line.longitude1),
                   Coord(cmd_line.latitude2, cmd_line.longitude2),
-                  cmd_line.file)
+                  cmd_line.filebase+".osm")
+
+    # Also fetch the SRTM data when not disabled
+    if opts['topo']:
+        get_topo_data( Coord(cmd_line.latitude1, cmd_line.longitude1),
+                  Coord(cmd_line.latitude2, cmd_line.longitude2),
+                  cmd_line.filebase)
 
     # All done, over and out
+    pinfo("All Done!")
     return 0
 
 
