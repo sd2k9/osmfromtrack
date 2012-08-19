@@ -20,15 +20,23 @@ import logging
 # Argument parser
 import argparse
 # Regular Expressions
-# import re
+import re
+# OS operation
+import os
 # Spawn sub-process
-import subprocess
+# import subprocess
+# Fetching OSM Data
+import urllib2
 
 
 # ******************************************************************************
 # *** Global settings as dictionary
-# opt = {'jack': 4098,
-#        'sape': 4139}
+opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,east,north
+        # Will be used with format()
+        'xapi_url': 'http://open.mapquestapi.com/xapi/api/0.6/map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # Test mode - only echo commands, will be set by command line
+        'test': False
+       }
 
 # Provide logging shortcuts
 pinfo  = logging.info
@@ -39,23 +47,162 @@ perror = logging.error
 # ******************************************************************************
 # *** Exception Objects
 
-#TEMPLATE class ExtractMailError(BaseException):
-#TEMPLATE    """Exception Class for function extract_mail_content
-#TEMPLATE 
-#TEMPLATE    These raised errors are not critical, they signal that the processing
-#TEMPLATE    should be aborted here.
-#TEMPLATE    """
-#TEMPLATE    pass
+class OutputFileExists(BaseException):
+    """Exception Class for existing output file
+    """
+    pass
 
 
 # ********************************************************************************
 # *** Objects
-# ...
+def relax_float(string):
+   """A relaxed float representation, which also understands "," as separator
+
+   For example, both values are equally valid and have the same value:
+   123.456 == 123,456
+
+   Return: Float or raises an ArgumentTypeError
+   """
+   # First try the replacement (in case it's necessary)
+   rstring = re.sub(',', '.', string)
+   try:  # Now try the conversion
+     val = float(rstring)
+   except:   # Error, we have failed
+       msg = "{0} is no float value".format(string)
+       raise argparse.ArgumentTypeError(msg)
+   # else we have succeeded
+   return val
+
+
+class Coord():
+   """GPX coordinates, consisting of longitude and latitude
+   """
+   # C'Tor with arguments longitude and latitude
+   def __init__(self, lat = 0, lon = 0):
+       self.lat = lat
+       self.lon = lon
+   # Latitude
+   # lat
+   # Longitude
+   # lon
+
 
 # ******************************************************************************
 # *** Functions
-# ...
 
+# def execute_cmd(cmd, *args):
+#     """Execute the given command and abort on error with an error message
+# 
+#     Argument: Command to execute
+#               Its arguments
+# 
+#     Return: Nothing
+#     """
+#     # TODO - see also tweetfile
+#     pass
+
+def get_osm_data(pos1, pos2, outfile):
+    """Download OSM data from a box into a file
+
+    Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
+              outfile - Output file name, to write the OSM data to
+
+    Return: Nothing
+    """
+    # Manual data fetching with OSM (X)API:
+    # - Example export from www.openstreetmap.org
+    #        47.1916
+    # 9.8237		9.8746
+    # 	47.1423
+    # 
+    # - bbox = left,down,right,up
+    # 
+    # API - Data identical
+    # curl --location --globoff -o map-osm-api.osm  'http://api.openstreetmap.org/api/0.6/map?bbox=9.8237,47.1423,9.8746,47.1916'
+    # 
+    # XAPI - Seems to be reordered compared to API result, but content-wise identical
+    # curl --location --globoff -o map-osm-xapi.osm  'http://open.mapquestapi.com/xapi/api/0.6/map?bbox=9.8237,47.1423,9.8746,47.1916'
+
+    # Preprocessing - match coords to box boundaries
+    # west/east
+    if pos1.lon > pos2.lon:
+        west = pos2.lon
+        east = pos1.lon
+    else:
+        west = pos1.lon
+        east = pos2.lon
+    # north/south
+    if pos1.lat > pos2.lat:
+        north = pos1.lat
+        south = pos2.lat
+    else:
+        north = pos2.lat
+        south = pos1.lat
+    # The URL constructed
+    url_str = opts['xapi_url'].format(west=west, east=east, north=north, south=south)
+
+    # Check for existing outfile - Attention race condition because of later open!
+    if os.path.isfile(outfile):
+        perror("File " + outfile + " exists already - Aborting")
+        raise OutputFileExists
+
+    # Open output file
+    try:
+        # Open output file - binary write
+        if not opts['test']:  # Not in testmode
+            out = open(outfile, 'wb')
+    except:
+        perr('Failing to open output file ' + outfile)
+        raise
+
+
+    try:
+        # Open the URL
+        pinfo("Fetching OSM data from URL\n   " + url_str)
+        pinfo("   and writing it to file " + outfile)
+        pinfo("   This will take a while ...")
+        if not opts['test']:  # Not in testmode
+              url = urllib2.urlopen(url_str)
+    except:
+        perror('Opening the XAPI-URL failed: ' + url_str )
+        raise
+
+    try:
+        # Write to file - with nice progress bar thanks to
+        # http://stackoverflow.com/questions/22676/how-do-i-download-a-file-over-http-using-python
+        if not opts['test']:  # Not in testmode
+            out.write(url.read())
+            # Progress bar not working as expected because of chunked transfer
+            # meta = url.info()
+            # print meta
+            # file_size = int(meta.getheaders("Content-Length")[0])
+            # print file_size
+            # return
+            # pinfo("   Downloading: {0:s} Bytes: {1:s}".format(file_name, file_size) )
+            # file_size_dl = 0
+            # block_sz = 8192
+            # while True:
+            #     buffer = url.read(block_sz)
+            #     if not buffer:
+            #         break
+            # file_size_dl += len(buffer)
+            # out.write(buffer)
+            # status = r"%10d  [%3.2f%%]" % (file_size_dl, file_size_dl * 100. / file_size)
+            # status = status + chr(8)*(len(status)+1)
+            # pinfo("   " + status)
+    except:
+        perror('Reading data and writing to the file failed!')
+        raise
+
+
+    # Cleanup
+    if not opts['test']:  # Not in testmode
+        url.close()
+        out.close()
+
+    # Over and out
+    pinfo("   Done!")
+    return
 
 
 # ********************************************************************************
@@ -69,26 +216,34 @@ def main():
     cmd_desc ="""Download OSM data from a coordinate box
 Supply with two set of coorinates (like from Google Map's LatLng marker)
 and the box will be fetched from OSM.
-Example: %(prog)s 61.001 22.758 60.948 22.871"""
+Example: %(prog)s data.osm 61.001 22.758 60.948 22.871"""
     # cmd_desc ="""osmfromtrack - Download OSM data around a GPX track"""
     cmd_version="%(prog)s " + __version__
     cmd_parser = argparse.ArgumentParser(description=cmd_desc,
                  formatter_class=argparse.RawDescriptionHelpFormatter)  # With pre-formatted description
-    cmd_parser.add_argument('latitude1', type=float, help='Latitude of first point')
-    cmd_parser.add_argument('longitude1', type=float, help='Longitude of first point')
-    cmd_parser.add_argument('latitude2', type=float, help='Latitude of second point')
-    cmd_parser.add_argument('longitude2', type=float, help='Longitude of second point')
+    cmd_parser.add_argument('file', help='Output file name')
+    cmd_parser.add_argument('latitude1', type=relax_float, help='Latitude of first point')
+    cmd_parser.add_argument('longitude1', type=relax_float, help='Longitude of first point')
+    cmd_parser.add_argument('latitude2', type=relax_float, help='Latitude of second point')
+    cmd_parser.add_argument('longitude2', type=relax_float, help='Longitude of second point')
     cmd_parser.add_argument('-V', '--version', action='version', version=cmd_version)
     cmd_parser.add_argument('--quiet', '-q', dest='quiet', action='store_true',
                         default=False, help='quiet output')
-    # more options to add
+    cmd_parser.add_argument('--test', '--dry-run', '-t', dest='test', action='store_true',
+                        default=False, help='Test mode - only echo commands')
+    # Parse - abort on failure
     cmd_line = cmd_parser.parse_args()
 
     # Setup logging: Show only from warnings when being QUIET
     logging.basicConfig(level=logging.WARNING if cmd_line.quiet else logging.INFO,
                     format="%(message)s")
+    # Set test mode
+    opts['test'] = cmd_line.test
 
-    # Abort when failure in command line - now handled by argparse
+    # Get the data from the OSM XAPI
+    get_osm_data( Coord(cmd_line.latitude1, cmd_line.longitude1),
+                  Coord(cmd_line.latitude2, cmd_line.longitude2),
+                  cmd_line.file)
 
     # All done, over and out
     return 0
