@@ -38,16 +38,21 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         'test': False,
         # Create Topographic map also - can be unset by command line
         'topo': True,
+        # Default hgt cache directory - can be changed by command line
+        'topo_hgtcache_dir': os.path.expanduser("~") + "/.cache/hgt",
 
         # Command for Topographic Map creation: phyghtmap
         'topo_cmd': 'phyghtmap',
         # Default options for phyghtmap
         'topo_opts': [ "--step=50",
-                      "--line-cat=400,100", "--jobs=2", "--viewfinder-mask=1" ],
+                      "--line-cat=400,100", "--jobs=2", "--viewfinder-mask=1",
+                      "--gzip=9" ],
+        # Custom hgt cache directory, will be used with format()
+        'topo_opts_hgtcache': '--hgtdir={dir:s}',
         # Area to process, will be used with format()
-        'topo_area': '--area={west:f}:{south:f}:{east:f}:{north:f}',
+        'topo_opts_area': '--area={west:f}:{south:f}:{east:f}:{north:f}',
         # Output base file name, will be used with format()
-        'topo_output': '-o {outbase:s}',
+        'topo_opts_output': '-o{outbase:s}',
        }
 
 # Provide logging shortcuts
@@ -112,8 +117,9 @@ class ExecTopoCmd():
        # Then execute it
        try:
            execute_cmd(opts['topo_cmd'], opts['topo_opts'] +
-              [ opts['topo_area'].format(west=self._west, east=self._east, north=self._north, south=self._south), 
-                opts['topo_output'].format(outbase=self._outbase) ]
+              [ opts['topo_opts_area'].format(west=self._west, east=self._east, north=self._north, south=self._south), 
+                opts['topo_opts_hgtcache'].format(dir=opts['topo_hgtcache_dir']),
+                opts['topo_opts_output'].format(outbase=self._outbase) ]
               )
        except ExecuteCommandFailed:
            raise    # Error already printed, that's it for us
@@ -341,7 +347,8 @@ def main():
 Supply with two set of coorinates (like from Google Map's LatLng marker)
 and the box will be fetched from OSM.
 When not disabled, also the topographic data will be created
-Example: %(prog)s data 61.001 22.758 60.948 22.871"""
+Example: %(prog)s data 61,001 22,758 60.948 22.871
+         Yes, both English as well as German notation is allowed"""
     # cmd_desc ="""osmfromtrack - Download OSM data around a GPX track"""
     cmd_version="%(prog)s " + __version__
     cmd_parser = argparse.ArgumentParser(description=cmd_desc,
@@ -358,6 +365,10 @@ Example: %(prog)s data 61.001 22.758 60.948 22.871"""
                         default=False, help='Test mode - only echo commands')
     cmd_parser.add_argument('--no-topo', dest='topo', action='store_false',
                         default=True, help='Do not create a topographic map overlay')
+    cmd_parser.add_argument('--hgtdir', dest='hgtdir', action='store',
+                        default=None, help='Change hgt cache directory for topographic map overlay, '
+                                      'defaults to ' + opts['topo_hgtcache_dir'],
+                            metavar="DIRECTORY")
     # Parse - abort on failure
     cmd_line = cmd_parser.parse_args()
 
@@ -368,6 +379,9 @@ Example: %(prog)s data 61.001 22.758 60.948 22.871"""
     opts['test'] = cmd_line.test
     # (Un)Set topo map creation
     opts['topo'] = cmd_line.topo
+    # Set hgt cache dir
+    if cmd_line.hgtdir:
+        opts['topo_hgtcache_dir'] = cmd_line.hgtdir
 
     # Get the data from the OSM XAPI
     get_osm_data( Coord(cmd_line.latitude1, cmd_line.longitude1),

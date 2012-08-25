@@ -39,6 +39,14 @@ See also
 To create a topographic map you need the tool phyghtmap.
 If you don't want this, just use the command line option "--no-topo"
 
+For the current version  1.43-1 you also need to apply the following patch
+to being able to set the hgt cache directory:
+http://wiki.openstreetmap.org/wiki/User:Edamame/PatchPhyghtmapHgtDir
+If not wanted, just remove the line
+"opts['topo_opts_hgtcache'].format(dir=opts['topo_hgtcache_dir']),"
+from the execute_cmd code
+
+
 
 How to setup phyghtmap with debian (other OS may vary)
 - Get DEB packet of phyghtmap from http://katze.tfiu.de/projects/phyghtmap/
