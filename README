@@ -81,7 +81,7 @@ Improve etrex30 (currently unreleased, will come somewhen later)
 to automatically assemble Garmin Map file with topographic overlay
 
 Assemply with mkgmap - the number file names are mandatory
-1.) Convert "nomrmal" OSMs
+1.) Convert "normal" OSMs
     mkgmap --draw-priority=25 60000000.osm
     --> 60000000.osm
 2.) Convert Topo-OSMs
