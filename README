@@ -83,7 +83,7 @@ to automatically assemble Garmin Map file with topographic overlay
 Assemply with mkgmap - the number file names are mandatory
 1.) Convert "normal" OSMs
     mkgmap --draw-priority=25 60000000.osm
-    --> 60000000.osm
+    --> 60000000.img
 2.) Convert Topo-OSMs
     mkgmap --draw-priority=100 --transparent 50000000.osm
     --> 50000000.img
