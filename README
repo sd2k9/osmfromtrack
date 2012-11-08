@@ -47,12 +47,11 @@ If not wanted, just remove the line
 from the execute_cmd code
 
 
-
 How to setup phyghtmap with debian (other OS may vary)
 - Get DEB packet of phyghtmap from http://katze.tfiu.de/projects/phyghtmap/
   e.g. http://katze.tfiu.de/projects/phyghtmap/phyghtmap_1.43-1_all.deb
 - Install, e.g.
-  sudo dpkg -i  phyghtmap_1.43-1_all.deb 
+  sudo dpkg -i  phyghtmap_1.43-1_all.deb
 - For Version 1.43 you manually need to repair some things
 - If you get the error
   File "/usr/bin/phyghtmap", line 5, in <module>
@@ -74,26 +73,3 @@ A sample call as done by osmfromtrack:
 
 Configuration can be done at the top of osmfromtrack file, look for 'topo_opts'
 
-
-Further Brainstorming
-=====================
-Improve etrex30 (currently unreleased, will come somewhen later)
-to automatically assemble Garmin Map file with topographic overlay
-
-Assemply with mkgmap - the number file names are mandatory
-1.) Convert "normal" OSMs
-    mkgmap --draw-priority=25 60000000.osm
-    --> 60000000.img
-2.) Convert Topo-OSMs
-    mkgmap --draw-priority=100 --transparent 50000000.osm
-    --> 50000000.img
-3.) Merge
-     mkgmap -n 63240991 --description="Mapname Topo" --latin1 --gmapsupp \
-      	                --remove-short-arcs=3 --route \
-		        --family-id=60 --product-id=1 6*.img \
-		        --family-id=50 --product-id=1 5*.img
-    --> gmapsupp.img
-
-Get mkgmap from
-http://www.mkgmap.org.uk/snapshots/
-(Caution: The available debian package is very old)
