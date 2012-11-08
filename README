@@ -93,3 +93,7 @@ Assemply with mkgmap - the number file names are mandatory
 		        --family-id=60 --product-id=1 6*.img \
 		        --family-id=50 --product-id=1 5*.img
     --> gmapsupp.img
+
+Get mkgmap from
+http://www.mkgmap.org.uk/snapshots/
+(Caution: The available debian package is very old)
