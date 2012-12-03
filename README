@@ -30,6 +30,8 @@ My intended usage is to feed the greated OSM files to mkgmap,
 which I can then download to my Garmin eTrex30 to have the map
 material for my next trip available.
 
+You can get etrex30 from
+https://github.com/sd2k9/tools/blob/master/etrex30
 
 Topographic Map Configuration for Debian
 ========================================
@@ -45,6 +47,11 @@ http://wiki.openstreetmap.org/wiki/User:Edamame/PatchPhyghtmapHgtDir
 If not wanted, just remove the line
 "opts['topo_opts_hgtcache'].format(dir=opts['topo_hgtcache_dir']),"
 from the execute_cmd code
+
+Another patch (currently unreleased) is required to invoke etrex30 from within.
+For now, remove the following line
+                       "--verbatim-output-name" ],    # phyghtmap improvement not to mangle the file name
+(and replace by a single "]," )
 
 
 How to setup phyghtmap with debian (other OS may vary)

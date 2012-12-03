@@ -42,6 +42,8 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         'osm': True,
         # Create Topographic map - can be unset by command line
         'topo': True,
+        # Compress files - can be unset by command line
+        'compress': True,
         # Default hgt cache directory - can be changed by command line
         'topo_hgtcache_dir': os.path.expanduser("~") + "/.cache/hgt",
 
@@ -50,13 +52,24 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         # Default options for phyghtmap
         'topo_opts': [ "--step=50",
                       "--line-cat=400,100", "--jobs=2", "--viewfinder-mask=1",
-                      "--gzip=9" ],
+                       "--verbatim-output-name" ],    # phyghtmap improvement not to mangle the file name
         # Custom hgt cache directory, will be used with format()
         'topo_opts_hgtcache': '--hgtdir={dir:s}',
         # Area to process, will be used with format()
         'topo_opts_area': '--area={west:f}:{south:f}:{east:f}:{north:f}',
         # Output base file name, will be used with format()
-        'topo_opts_output': '-o{outbase:s}',
+        'topo_opts_output': '-o{outfile:s}',
+
+        # Command for compression: xz
+        'compress_cmd': 'xz',
+        # Default options for compress_cmd
+        'compress_opts': [ ], # none
+
+        # Invoke etrex30 afterwards when not None
+        # contains title and shorttitle as array - set by command line
+        'etrex_title_shorttitle': None,
+        # etrex30 executable
+        'etrex_cmd': 'etrex30',
        }
 
 # Provide logging shortcuts
@@ -102,16 +115,16 @@ class ExecTopoCmd():
    Why "with"? Just for fun and playing around with it ^_^
 
    C'tor Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
-             outbase - Output file name base, to write the OSM data to
+             outfile - Output file name, to write the OSM data to
 
    Return: Nothing
    """
    # C'Tor with arguments
-   def __init__(self, pos1, pos2, outbase):
+   def __init__(self, pos1, pos2, outfile):
        # Preprocessing - match coords to box boundaries
        (self._west, self._east, self._north, self._south) = coord_order(pos1, pos2)
        # And store filebase
-       self._outbase = outbase
+       self._outfile = outfile
 
    # Start of with processing
    def __enter__(self):
@@ -123,7 +136,7 @@ class ExecTopoCmd():
            execute_cmd(opts['topo_cmd'], opts['topo_opts'] +
               [ opts['topo_opts_area'].format(west=self._west, east=self._east, north=self._north, south=self._south), 
                 opts['topo_opts_hgtcache'].format(dir=opts['topo_hgtcache_dir']),
-                opts['topo_opts_output'].format(outbase=self._outbase) ]
+                opts['topo_opts_output'].format(outfile=self._outfile) ]
               )
        except ExecuteCommandFailed:
            raise    # Error already printed, that's it for us
@@ -228,19 +241,19 @@ def get_osm_data(pos1, pos2, outfile):
     Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
               outfile - Output file name, to write the OSM data to
 
-    Return: Nothing
+    Return: Output file name (can be modified by compression)
     """
     # Manual data fetching with OSM (X)API:
     # - Example export from www.openstreetmap.org
     #        47.1916
     # 9.8237		9.8746
     # 	47.1423
-    # 
+    #
     # - bbox = left,down,right,up
-    # 
+    #
     # API - Data identical
     # curl --location --globoff -o map-osm-api.osm  'http://api.openstreetmap.org/api/0.6/map?bbox=9.8237,47.1423,9.8746,47.1916'
-    # 
+    #
     # XAPI - Seems to be reordered compared to API result, but content-wise identical
     # curl --location --globoff -o map-osm-xapi.osm  'http://open.mapquestapi.com/xapi/api/0.6/map?bbox=9.8237,47.1423,9.8746,47.1916'
 
@@ -302,42 +315,109 @@ def get_osm_data(pos1, pos2, outfile):
         perror('Reading data and writing to the file failed!')
         raise
 
-
     # Cleanup
     if not opts['test']:  # Not in testmode
         url.close()
         out.close()
 
+    # Do compression, when requested
+    routfile = compress_file(outfile)
+
     # Over and out
     pinfo("   Done!")
-    return
+    return routfile
+
+def compress_file(cfile):
+    """Compress the specified file when enabled in options
+
+    Arguments: cfile - file to compress in-place
+
+    Return: Output file name (can be modified by compression)
+    """
+
+    if not opts['compress']:
+        return cfile                         # No compression requested
+
+    # Then execute it
+    try:
+        execute_cmd(opts['compress_cmd'],
+                    opts['compress_opts'] + [ cfile ] )
+    except ExecuteCommandFailed:
+        raise    # Error already printed, that's it for us
+    except:   # Other error
+        perror("   Execution failed!")
+        raise
+    return cfile + ".xz"
 
 
-def get_topo_data(pos1, pos2, outbase):
+def get_topo_data(pos1, pos2, outfile):
     """Create OSM Topographic data from a box into a file
 
     Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
-              outbase - Output file name base, to write the OSM data to
+              outfile - Output file name
 
-    Return: Nothing
+    Return: Output file name (can be modified by compression)
     """
 
     # Call Sub-Program with the help of a context manager
     pinfo("Creating topographic map data with " + opts['topo_cmd'])
     try:
-        with ExecTopoCmd(pos1, pos2, outbase) as topo_tool:
+        with ExecTopoCmd(pos1, pos2, outfile) as topo_tool:
             pass
     except ExecuteCommandFailed:
         # Already consumed, no more printing
-        return
+        return None
     except:
         perror("   Execution failed!")
         raise
 
+    # Check that output file got created
+    if not opts['test']:  # Not in testmode
+        if not os.path.isfile(outfile):
+            perror("Expected output file " + outfile + " did not got created - Aborting")
+            raise OutputFilekNotCreated
+
+    # Do compression, when requested
+    routfile = compress_file(outfile)
+
+    # Over and out
+    pinfo("   Done!")
+    return routfile
+
+
+def invoke_etrex(title, shorttitle, osm, topo):
+    """Invokes etrex30 executable for the created files
+
+    Arguments: title      - Map Title, see etrex30
+               shorttitle - Map Short Title, see etrex30
+               osm        - Filename OSM Data
+               topo       - Filename Topographic OSM Data; None when not availabe
+
+    Return: Nothing
+    """
+
+    pinfo("Invoking etrex to put files an Garmim device")
+
+    # Build option array
+    etrex_opts = []
+    if topo is None:
+        etrex_opts.append("putosm")  # Only OSM
+    else:
+        etrex_opts.append("puttopo")  # OSM and Topo
+
+    # OSM Data
+    etrex_opts.append(osm)
+    if topo is not None:
+        etrex_opts.append(topo)        # Also add Topo
+    # Title names
+    etrex_opts.extend([ title, shorttitle ] )
+
+    # Execute it
+    execute_cmd(opts['etrex_cmd'], etrex_opts )
+
     # Over and out
     pinfo("   Done!")
     return
-
 
 # ********************************************************************************
 
@@ -371,10 +451,18 @@ Example: %(prog)s data 61,001 22,758 60.948 22.871
                         default=True, help='Do not download OSM data')
     cmd_parser.add_argument('--no-topo', dest='topo', action='store_false',
                         default=True, help='Do not create a topographic map overlay')
+    cmd_parser.add_argument('--no-compress', dest='compress', action='store_false',
+                        default=True, help='Do not compress output files with ' + opts['compress_cmd'] )
     cmd_parser.add_argument('--hgtdir', dest='hgtdir', action='store',
                         default=None, help='Change hgt cache directory for topographic map overlay, '
                                       'defaults to ' + opts['topo_hgtcache_dir'],
                             metavar="DIRECTORY")
+    cmd_parser.add_argument('-e', '--etrex', '--etrex30', dest='etrex', action='store', nargs=2,
+                            default=None,
+                            help='Invoke etrex30 with argument osm or topo to put the created files '
+                            'on a Garmin eTrex30 device. '
+                            'First value is title, second value is shorttitle. See etrex30 help',
+                            metavar="VAL")
     # Parse - abort on failure
     cmd_line = cmd_parser.parse_args()
 
@@ -387,21 +475,51 @@ Example: %(prog)s data 61,001 22,758 60.948 22.871
     opts['osm'] = cmd_line.osm
     # (Un)Set topo map creation
     opts['topo'] = cmd_line.topo
+    # (Un)Set topo map creation
+    opts['compress'] = cmd_line.compress
     # Set hgt cache dir
     if cmd_line.hgtdir:
         opts['topo_hgtcache_dir'] = cmd_line.hgtdir
+    # Set etrex30 arguments
+    if cmd_line.etrex:
+        opts['etrex_title_shorttitle'] = cmd_line.etrex
 
     # Get the data from the OSM XAPI
+    filename_osm=None
     if opts['osm']:
-        get_osm_data( Coord(cmd_line.latitude1, cmd_line.longitude1),
+        filename_osm = get_osm_data( Coord(cmd_line.latitude1, cmd_line.longitude1),
                   Coord(cmd_line.latitude2, cmd_line.longitude2),
                   cmd_line.filebase+".osm")
 
     # Also fetch the SRTM data when not disabled
+    filename_topo=None
     if opts['topo']:
-        get_topo_data( Coord(cmd_line.latitude1, cmd_line.longitude1),
+        filename_topo = get_topo_data( Coord(cmd_line.latitude1, cmd_line.longitude1),
                   Coord(cmd_line.latitude2, cmd_line.longitude2),
-                  cmd_line.filebase)
+                  cmd_line.filebase+".topo.osm")
+
+    # Invoke etrex30 when requested
+    if opts['etrex_title_shorttitle']:
+        # Check for all combinations
+        if not opts['osm']:
+            # noosm, * - Not allowed
+            pwarn("OSM data creation disabled, therefore no garmin Download possible.")
+            pwarn("    Ignoring option --etrex")
+        elif opts['osm'] and (not opts['topo']):
+            # osm, notopo - No Topographic Data
+            invoke_etrex( title=opts['etrex_title_shorttitle'][0],
+                          shorttitle=opts['etrex_title_shorttitle'][1],
+                          osm=filename_osm,
+                          topo=None)
+        elif opts['osm'] and opts['topo']:
+            # osm, topo - Full data available
+            invoke_etrex( title=opts['etrex_title_shorttitle'][0],
+                          shorttitle=opts['etrex_title_shorttitle'][1],
+                          osm=filename_osm,
+                          topo=filename_topo)
+        else:
+            perror("Something wrent wrong, this path should have been a non-entry path")
+            raise AssertionError
 
     # All done, over and out
     pinfo("All Done!")
