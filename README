@@ -5,13 +5,24 @@ Download OSM data from within a coordinate box
 
 State
 =====
-Initially created, Ongoing development, not usable yet
+Ongoing development, usable beta
 
 Description
 ===========
 
 You can feed the tool with two set of coorinates (like from Google Map's LatLng marker)
 and the box will be fetched from OSM.
+
+License
+=======
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License version 3 as
+published by the Free Software Foundation.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
 
 osmfromtrack - Later Goal
