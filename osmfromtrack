@@ -444,7 +444,7 @@ def parse_commandline():
     For mode='gpx':
         gpxfile: Input GPX file name
     For mode= 'bbox'
-        latitude1, longitude1, latitude2, longitude2: Bounding box coordinates
+        pos1, pos2: Bounding box coordinates as Coord
     """
     # cmd_usage="usage: %prog [options] args"
     # For now, just fetch a rectangle by its coordinates
@@ -538,10 +538,8 @@ Example Call: %(prog)s data route.gpx
             'filebase': cmd_line.filebase
            }
     if rdic['mode'] == "bbox":
-         rdic['latitude1']  =  cmd_line.latitude1
-         rdic['longitude1'] = cmd_line.longitude1
-         rdic['latitude2']  =  cmd_line.latitude2
-         rdic['longitude2'] = cmd_line.longitude2
+         rdic['pos1']  =  Coord(cmd_line.latitude1, cmd_line.longitude1)
+         rdic['pos2']  =  Coord(cmd_line.latitude2, cmd_line.longitude2)
     elif rdic['mode'] == "gpx":
          rdic['gpxfile'] = cmd_line.gpxfile
     else:
@@ -566,7 +564,7 @@ def get_bbox_from_gpx(gpxfile, coords):
          coords: dict to return values
 
     Returns the following dict values inside the argument coords
-        latitude1, longitude1, latitude2, longitude2: Bounding box coordinates
+        pos1, pos2: Bounding box coordinates as Coord
     """
 
     # Open the file and read it in
@@ -600,11 +598,8 @@ def get_bbox_from_gpx(gpxfile, coords):
 
     # Assign back - currently without margin
     pwarn("   Warning: Margin is not yet added!")
-    coords['latitude1']  = lat_min
-    coords['longitude1'] = lon_min
-    coords['latitude2']  = lat_max
-    coords['longitude2']  = lon_max
-
+    coords['pos1']  =  Coord(lat=lat_min, lon=lon_min)
+    coords['pos2']  =  Coord(lat=lat_max, lon=lon_max)
 
     # All done
     return
@@ -627,16 +622,14 @@ def main():
     # Get the data from the OSM XAPI
     filename_osm=None
     if opts['osm']:
-        filename_osm = get_osm_data( Coord(coords['latitude1'], coords['longitude1']),
-                  Coord(coords['latitude2'], coords['longitude2']),
-                  coords['filebase'] + ".osm")
+        filename_osm = get_osm_data( coords['pos1'], coords['pos2'],
+                                     coords['filebase'] + ".osm")
 
     # Also fetch the SRTM data when not disabled
     filename_topo=None
     if opts['topo']:
-        filename_topo = get_topo_data( Coord(coords['latitude1'], coords['longitude1']),
-                  Coord(coords['latitude2'], coords['longitude2']),
-                  coords['filebase'] + ".topo.osm")
+        filename_topo = get_topo_data( coords['pos1'], coords['pos2'],
+                                       coords['filebase'] + ".topo.osm")
 
     # Invoke etrex30 when requested
     if opts['etrex_title_shorttitle']:
