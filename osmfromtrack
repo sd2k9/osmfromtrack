@@ -431,11 +431,19 @@ def invoke_etrex(title, shorttitle, osm, topo):
     return
 
 # ********************************************************************************
+# *** Command line parsing
 
-# *** Main Program
-def main():
+def parse_commandline():
+    """ Command line parsing
 
-    # *** Command line parsing
+    Returns the coordinates or gpx file in a dict; Members
+    filebase - Output file base
+    mode - either 'gpx' or 'bbox'
+    For mode='gpx':
+        gpxfile: Input GPX file name
+    For mode= 'bbox'
+        latitude1, longitude1, latitude2, longitude2: Bounding box coordinates
+    """
     # cmd_usage="usage: %prog [options] args"
     # For now, just fetch a rectangle by its coordinates
     cmd_desc ="""Download OSM data from a coordinate box or around a gpx file track.
@@ -485,10 +493,10 @@ Example: %(prog)s data 61,001 22,758 60.948 22.871 -
     cmd_bbox.add_argument('longitude1', type=relax_float, help='Longitude of first point')
     cmd_bbox.add_argument('latitude2', type=relax_float, help='Latitude of second point')
     cmd_bbox.add_argument('longitude2', type=relax_float, help='Longitude of second point')
-    cmd_bbox.set_defaults(cmdmode='boundingbox')   # Return parser mode
+    cmd_bbox.set_defaults(cmdmode='bbox')   # Return parser mode
 
     # Build sub parser for gpx file parsing
-    cmd_gpx_help = """Extract the map bounding box from a GPS track file.
+    cmd_gpx_help = """Extract the map bounding box from a GPX track file.
 The supplied file is read and all track points of the following format are considered:
     <trkpt lat="50.9816789999999" lon="14.075968"/>
 
@@ -499,7 +507,7 @@ Example Call: %(prog)s data route.gpx
 """.format(margin=opts['gpx_margin'])
     cmd_gpx = cmd_subparsers.add_parser('gpx', help = cmd_gpx_help) # aliases=['file']
     cmd_gpx.add_argument('filebase', help='Output file name base - no suffix please')
-    cmd_gpx.add_argument('inputfile', help='Input GPX file')
+    cmd_gpx.add_argument('gpxfile', help='Input GPX file')
     cmd_gpx.set_defaults(cmdmode='gpx')   # Return parser mode
 
     # Parse - abort on failure
@@ -523,26 +531,53 @@ Example Call: %(prog)s data route.gpx
     if cmd_line.etrex:
         opts['etrex_title_shorttitle'] = cmd_line.etrex
 
+    # Assign return values
+    rdic = {'mode': cmd_line.cmdmode,
+            'filebase': cmd_line.filebase
+           }
+    if rdic['mode'] == "bbox":
+         rdic['latitude1']  =  cmd_line.latitude1
+         rdic['longitude1'] = cmd_line.longitude1
+         rdic['latitude2']  =  cmd_line.latitude2
+         rdic['longitude2'] = cmd_line.longitude2
+    elif rdic['mode'] == "gpx":
+         rdic['gpxfile'] = cmd_line.gpxfile
+    else:
+       perror("Unknown command line parsing mode found! Something went wrong herre!")
+       raise RuntimeError
+
+    # Fertig
+    return rdic
+
+
+# ********************************************************************************
+
+# *** Main Program
+def main():
+
+    # *** Command line parsing
+    coords = parse_commandline()
+
     # When "gpx" is requested, then we need to fetch the coordinates from the file
-    if cmd_line.cmdmode == 'gpx':
-        pinfo("Extracting bounding box from " + cmd_line.inputfile + " ...")
+    if coords['mode'] == 'gpx':
+        pinfo("Extracting bounding box from " + coords['gpxfile'] + " ...")
         perror("NOT SUPPORTED YET - DEVEL ONGOING!")
-        raise UserError()
+        raise NotImplementedError
 
 
     # Get the data from the OSM XAPI
     filename_osm=None
     if opts['osm']:
-        filename_osm = get_osm_data( Coord(cmd_line.latitude1, cmd_line.longitude1),
-                  Coord(cmd_line.latitude2, cmd_line.longitude2),
-                  cmd_line.filebase+".osm")
+        filename_osm = get_osm_data( Coord(coords['latitude1'], coords['longitude1']),
+                  Coord(coords['latitude2'], coords['longitude2']),
+                  coords['filebase'] + ".osm")
 
     # Also fetch the SRTM data when not disabled
     filename_topo=None
     if opts['topo']:
-        filename_topo = get_topo_data( Coord(cmd_line.latitude1, cmd_line.longitude1),
-                  Coord(cmd_line.latitude2, cmd_line.longitude2),
-                  cmd_line.filebase+".topo.osm")
+        filename_topo = get_topo_data( Coord(coords['latitude1'], coords['longitude1']),
+                  Coord(coords['latitude2'], coords['longitude2']),
+                  coords['filebase'] + ".topo.osm")
 
     # Invoke etrex30 when requested
     if opts['etrex_title_shorttitle']:
