@@ -35,6 +35,8 @@ import os
 import subprocess
 # Fetching OSM Data
 import urllib2
+# XML parsing
+import xml.etree.ElementTree
 
 
 # ******************************************************************************
@@ -551,6 +553,63 @@ Example Call: %(prog)s data route.gpx
 
 
 # ********************************************************************************
+def get_bbox_from_gpx(gpxfile, coords):
+    """ Extracts a bounding box from a GPX file
+
+    It reads all track points from gpxfile of the following format:
+    <trkpt lat="50.9816789999999" lon="14.075968"/>
+    All points are read and a margin of opts['gpx_margin'] meter in all directions is
+    applied to calculate the bounding box.
+
+    Arguments:
+         gpxfile: GPX file to read from
+         coords: dict to return values
+
+    Returns the following dict values inside the argument coords
+        latitude1, longitude1, latitude2, longitude2: Bounding box coordinates
+    """
+
+    # Open the file and read it in
+    pinfo("Extracting bounding box from " + coords['gpxfile'] + " ...")
+    try:
+        xml_content = xml.etree.ElementTree.parse(gpxfile)
+    except:   # Error reading XML file
+        perror("Reading GPX file " + gpxfile + "failed!")
+        raise
+
+    # Now go through <trkpt> tags and get minimun/maximum for both lat and lon
+    lat_max = -999.9
+    lon_max = -999.9
+    lat_min = +999.9
+    lon_min = +999.9
+    # Get an iterator for all <trkpt>
+    trkpt_it = xml_content.getiterator("trkpt")
+    # Now do the examination
+    for trkpt in trkpt_it:
+        lat = float(trkpt.attrib['lat'])
+        lon = float(trkpt.attrib['lon'])
+        # Debug: print("lat={0}, lon={1}".format(lat, lon))
+        if lat > lat_max:
+            lat_max = lat
+        if lat < lat_min:
+            lat_min = lat
+        if lon > lon_max:
+            lon_max = lon
+        if lon < lon_min:
+            lon_min = lon
+
+    # Assign back - currently without margin
+    pwarn("   Warning: Margin is not yet added!")
+    coords['latitude1']  = lat_min
+    coords['longitude1'] = lon_min
+    coords['latitude2']  = lat_max
+    coords['longitude2']  = lon_max
+
+
+    # All done
+    return
+
+# ********************************************************************************
 
 # *** Main Program
 def main():
@@ -560,10 +619,10 @@ def main():
 
     # When "gpx" is requested, then we need to fetch the coordinates from the file
     if coords['mode'] == 'gpx':
-        pinfo("Extracting bounding box from " + coords['gpxfile'] + " ...")
-        perror("NOT SUPPORTED YET - DEVEL ONGOING!")
-        raise NotImplementedError
-
+        # Need to get it from GPX file, yeah
+        get_bbox_from_gpx(gpxfile=coords['gpxfile'], coords=coords)
+        # Debug
+        print(coords)
 
     # Get the data from the OSM XAPI
     filename_osm=None
