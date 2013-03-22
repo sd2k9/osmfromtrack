@@ -73,6 +73,9 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         # Default options for compress_cmd
         'compress_opts': [ ], # none
 
+        # GPX bounding box: Extra-Distance to fetch in m
+        'gpx_margin': 1000,
+
         # Invoke etrex30 afterwards when not None
         # contains title and shorttitle as array - set by command line
         'etrex_title_shorttitle': None,
@@ -435,21 +438,14 @@ def main():
     # *** Command line parsing
     # cmd_usage="usage: %prog [options] args"
     # For now, just fetch a rectangle by its coordinates
-    cmd_desc ="""Download OSM data from a coordinate box
-Supply with two set of coorinates (like from Google Map's LatLng marker)
-and the box will be fetched from OSM.
-When not disabled, also the topographic data will be created
-Example: %(prog)s data 61,001 22,758 60.948 22.871
-         Yes, both English as well as German notation is allowed"""
+    cmd_desc ="""Download OSM data from a coordinate box or around a gpx file track.
+When not disabled, also the topographic data will be created.
+"""
     # cmd_desc ="""osmfromtrack - Download OSM data around a GPX track"""
     cmd_version="%(prog)s " + __version__
     cmd_parser = argparse.ArgumentParser(description=cmd_desc,
                  formatter_class=argparse.RawDescriptionHelpFormatter)  # With pre-formatted description
-    cmd_parser.add_argument('filebase', help='Output file name base - no suffix please')
-    cmd_parser.add_argument('latitude1', type=relax_float, help='Latitude of first point')
-    cmd_parser.add_argument('longitude1', type=relax_float, help='Longitude of first point')
-    cmd_parser.add_argument('latitude2', type=relax_float, help='Latitude of second point')
-    cmd_parser.add_argument('longitude2', type=relax_float, help='Longitude of second point')
+    # Default Options
     cmd_parser.add_argument('-V', '--version', action='version', version=cmd_version)
     cmd_parser.add_argument('--quiet', '-q', dest='quiet', action='store_true',
                         default=False, help='quiet output')
@@ -471,6 +467,41 @@ Example: %(prog)s data 61,001 22,758 60.948 22.871
                             'on a Garmin eTrex30 device. '
                             'First value is title, second value is shorttitle. See etrex30 help',
                             metavar="VAL")
+
+    # Get object for the sub-parsers
+    cmd_subparsers = cmd_parser.add_subparsers(title='Operation Modes',
+                        description='Use coordinates or GPX file for bounding box generation.\nGet subcommand help with "%(prog)s subcommand --help"')
+    #                   help='additional help')
+
+    # Build sub parser for manual bounding box command
+    cmd_bbox_help = """Supply with two set of coorinates (like from Google Map's LatLng marker)
+and the box will be fetched from OSM.
+Example: %(prog)s data 61,001 22,758 60.948 22.871 - 
+         Yes, both English as well as German notation is allowed
+"""
+    cmd_bbox = cmd_subparsers.add_parser('bbox', help = cmd_bbox_help) # aliases=['coord', 'boundingbox', 'coordinates'],
+    cmd_bbox.add_argument('filebase', help='Output file name base - no suffix please')
+    cmd_bbox.add_argument('latitude1', type=relax_float, help='Latitude of first point')
+    cmd_bbox.add_argument('longitude1', type=relax_float, help='Longitude of first point')
+    cmd_bbox.add_argument('latitude2', type=relax_float, help='Latitude of second point')
+    cmd_bbox.add_argument('longitude2', type=relax_float, help='Longitude of second point')
+    cmd_bbox.set_defaults(cmdmode='boundingbox')   # Return parser mode
+
+    # Build sub parser for gpx file parsing
+    cmd_gpx_help = """Extract the map bounding box from a GPS track file.
+The supplied file is read and all track points of the following format are considered:
+    <trkpt lat="50.9816789999999" lon="14.075968"/>
+
+- All points are read and a margin of {margin}m in all directions is applied to
+calculate the bounding box.
+
+Example Call: %(prog)s data route.gpx
+""".format(margin=opts['gpx_margin'])
+    cmd_gpx = cmd_subparsers.add_parser('gpx', help = cmd_gpx_help) # aliases=['file']
+    cmd_gpx.add_argument('filebase', help='Output file name base - no suffix please')
+    cmd_gpx.add_argument('inputfile', help='Input GPX file')
+    cmd_gpx.set_defaults(cmdmode='gpx')   # Return parser mode
+
     # Parse - abort on failure
     cmd_line = cmd_parser.parse_args()
 
@@ -491,6 +522,13 @@ Example: %(prog)s data 61,001 22,758 60.948 22.871
     # Set etrex30 arguments
     if cmd_line.etrex:
         opts['etrex_title_shorttitle'] = cmd_line.etrex
+
+    # When "gpx" is requested, then we need to fetch the coordinates from the file
+    if cmd_line.cmdmode == 'gpx':
+        pinfo("Extracting bounding box from " + cmd_line.inputfile + " ...")
+        perror("NOT SUPPORTED YET - DEVEL ONGOING!")
+        raise UserError()
+
 
     # Get the data from the OSM XAPI
     filename_osm=None
