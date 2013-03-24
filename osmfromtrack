@@ -149,11 +149,11 @@ class ExecTopoCmd():
 
        # Then execute it
        try:
-           execute_cmd(opts['topo_cmd'], opts['topo_opts'] +
+           cmd = [ opts['topo_cmd'] ] + opts['topo_opts'] + \
               [ opts['topo_opts_area'].format(west=self._west, east=self._east, north=self._north, south=self._south), 
                 opts['topo_opts_hgtcache'].format(dir=opts['topo_hgtcache_dir']),
                 opts['topo_opts_output'].format(outfile=self._outfile) ]
-              )
+           execute_cmd(*cmd)
        except ExecuteCommandFailed:
            raise    # Error already printed, that's it for us
        except:   # Other error
@@ -622,7 +622,8 @@ def get_bbox_from_gpx(gpxfile, coords):
     lat_min = +999.9
     lon_min = +999.9
     # Get an iterator for all <trkpt>
-    trkpt_it = xml_content.getiterator("trkpt")
+    pwarn("Warning - Using hard-coded namespace http://www.topografix.com/GPX/1/1 for XML reader - how can I ignore the namespace?")
+    trkpt_it = xml_content.iter("{http://www.topografix.com/GPX/1/1}trkpt")
     # Now do the examination
     for trkpt in trkpt_it:
         lat = float(trkpt.attrib['lat'])
@@ -636,6 +637,9 @@ def get_bbox_from_gpx(gpxfile, coords):
             lon_max = lon
         if lon < lon_min:
             lon_min = lon
+
+    # Basic error check
+    assert (lat_max != -999.9) and (lon_max != -999.9) and (lat_min != +999.9) and (lon_min != +999.9)
 
     # Assign back - currently without margin
     pwarn("   Warning: Margin is not yet added!")
