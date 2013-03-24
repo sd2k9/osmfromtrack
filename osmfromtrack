@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # file name: ''osmfromtrack''
 #   project: osmfromtrack
@@ -34,7 +34,7 @@ import os
 # Spawn sub-process
 import subprocess
 # Fetching OSM Data
-import urllib2
+import urllib.request
 # XML parsing
 import xml.etree.ElementTree
 
@@ -70,10 +70,13 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         # Output base file name, will be used with format()
         'topo_opts_output': '-o{outfile:s}',
 
-        # Command for compression: xz
+        # Command for compression with default options: xz
         'compress_cmd': 'xz',
-        # Default options for compress_cmd
-        'compress_opts': [ ], # none
+
+        # Command for inline uncompression with default options: xz
+        'uncompress_cmd': [ 'xz', '-d', '--stdout'],
+        # Regexp to find compressed file
+        'uncompress_match': re.compile('\.xz$'),
 
         # GPX bounding box: Extra-Distance to fetch in m
         'gpx_margin': 1000,
@@ -191,36 +194,52 @@ def relax_float(string):
    # else we have succeeded
    return val
 
-def execute_cmd(cmd, args):
-    """Execute the given command and raises an ExecuteCommandFailed upon failure
+def execute_cmd(*cmd, return_output=False):
+    """ *** Execute shell and examine error code
+    1.P+: Array of command line call
+    return_ouput: When True then the output is returned
+                  False: Print it to shell output
 
-    Argument: Command to execute
-              Its arguments as list
-
-    Return: Nothing
+    Returns: Command output for return_output=True, None otherwise
     """
 
-    # Echo
-    pinfo("   Executing " + cmd + " " + " ".join(args) )
+    # Create variable, needed for catch
+    cmd_out = None
+    try:
+       # Print command to execute
+       pinfo("   " + " ".join(cmd))
+       if opts['test']:   # No execution in Testmode
+           return 0
+       phandler = subprocess.Popen(cmd, \
+                      shell=False, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+       # Catch program output and error out
+       cmd_stdout, cmd_stderr = phandler.communicate()
+       # Return code
+       retcode = phandler.returncode
+       # When not keeping program output, throw it away
+       if not return_output:
+          pinfo(cmd_stdout.decode(encoding))
+          pinfo(cmd_stderr.decode(encoding))
+          cmd_out = None
+       else:
+          # Combined output for returning as str
+          cmd_out = (cmd_stdout + cmd_stderr).decode()
 
-    # Execute and print output
-    if not opts['test']:  # Not in testmode
-        try:
-            retcode = subprocess.call([cmd] + args, shell=False)
-            if retcode < 0:
-                perror("   cmd {0} was terminated by signal {1} ".format(cmd, str(-retcode)))
-                raise ExecuteCommandFailed()
-            elif retcode > 0:
-                perror("   cmd {0} retunred error code {1} ".format(cmd, str(retcode)))
-                raise ExecuteCommandFailed()
-        except OSError as e:
-            perror("   cmd {0} execution failed: {1}".format(cmd, str(e)))
-            raise ExecuteCommandFailed()
-        except:
-            raise   # Other errors are passed further
+       if retcode < 0:
+           perror("   cmd {0} was terminated by signal {1} ".format(cmd, str(-retcode)))
+           raise ExecuteCommandFailed()
+       elif retcode > 0:
+           perror("   cmd {0} retunred error code {1} ".format(cmd, str(retcode)))
+           raise ExecuteCommandFailed()
+    except OSError as e:
+        perror("   cmd {0} execution failed: {1}".format(cmd, str(e)))
+        raise ExecuteCommandFailed()
+    except:
+       raise   # Other errors are passed further
 
-    # Done
-    return
+
+    return cmd_out   # No error
 
 
 def coord_order(pos1, pos2):
@@ -296,7 +315,7 @@ def get_osm_data(pos1, pos2, outfile):
         pinfo("   and writing it to file " + outfile)
         pinfo("   This will take a while ...")
         if not opts['test']:  # Not in testmode
-              url = urllib2.urlopen(url_str)
+              url = urllib.request.urlopen(url_str)
     except:
         perror('Opening the XAPI-URL failed: ' + url_str )
         raise
@@ -353,8 +372,7 @@ def compress_file(cfile):
 
     # Then execute it
     try:
-        execute_cmd(opts['compress_cmd'],
-                    opts['compress_opts'] + [ cfile ] )
+        execute_cmd(opts['compress_cmd'], cfile )
     except ExecuteCommandFailed:
         raise    # Error already printed, that's it for us
     except:   # Other error
@@ -426,7 +444,7 @@ def invoke_etrex(title, shorttitle, osm, topo):
     etrex_opts.extend([ title, shorttitle ] )
 
     # Execute it
-    execute_cmd(opts['etrex_cmd'], etrex_opts )
+    execute_cmd(opts['etrex_cmd'], *etrex_opts )
 
     # Over and out
     pinfo("   Done!")
@@ -569,11 +587,34 @@ def get_bbox_from_gpx(gpxfile, coords):
 
     # Open the file and read it in
     pinfo("Extracting bounding box from " + coords['gpxfile'] + " ...")
-    try:
-        xml_content = xml.etree.ElementTree.parse(gpxfile)
-    except:   # Error reading XML file
-        perror("Reading GPX file " + gpxfile + "failed!")
-        raise
+    # Is it compresssed?
+    if opts['uncompress_match'].search(gpxfile):
+        # Yes, so we need to uncompress it
+        pinfo("   Compressed file found - will uncompress it")
+        try:
+            cmd = opts['uncompress_cmd']
+            cmd.append(gpxfile)
+            gpxunc = execute_cmd(*cmd, return_output=True)
+        except ExecuteCommandFailed:
+            raise    # Error already printed, that's it for us
+        except:   # Other error
+            perror("   Execution failed!")
+            raise
+        # Now parse the data
+        try:
+            xml_content = xml.etree.ElementTree.XML(gpxunc)
+        except:   # Error reading XML file
+            perror("Error parsing uncompressed GPX file " + gpxfile)
+            raise
+    else:
+        # No compression? Then just read as-is
+        try:
+            xml_content = xml.etree.ElementTree.parse(gpxfile)
+        except:   # Error reading XML file
+            perror("Reading GPX file " + gpxfile + "failed!")
+            raise
+
+
 
     # Now go through <trkpt> tags and get minimun/maximum for both lat and lon
     lat_max = -999.9
@@ -616,8 +657,7 @@ def main():
     if coords['mode'] == 'gpx':
         # Need to get it from GPX file, yeah
         get_bbox_from_gpx(gpxfile=coords['gpxfile'], coords=coords)
-        # Debug
-        print(coords)
+        # Debug         print(coords)
 
     # Get the data from the OSM XAPI
     filename_osm=None
@@ -660,7 +700,7 @@ def main():
 
 
 # *** Call Main program
-__version__ = filter(str.isdigit, "$LastChangedRevision$")
+__version__ = ''.join(filter(str.isdigit, "$LastChangedRevision$"))
 if not __version__:
     __version__='DEV'
 if __name__ == "__main__":
