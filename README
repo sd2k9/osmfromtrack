@@ -1,17 +1,41 @@
 osmfromtrack
 ============
 
-Download OSM data from within a coordinate box
+Download OSM data from a coordinate box or around a gpx file track.
+When not disabled, also the topographic data will be created.
+
 
 State
 =====
-Ongoing development, usable beta
+Usable
+
+For topographic map data a patched version of phyghtmap
+is required (see below)
+
 
 Description
 ===========
+Bounding Box Mode:
+    Supply with two set of coordinates (like from Google Map's LatLng marker)
+    and the box will be fetched from OSM.
+    Example: osmfromtrack data 61,001 22,758 60.948 22.871
 
-You can feed the tool with two set of coorinates (like from Google Map's LatLng marker)
-and the box will be fetched from OSM.
+GPX File Mode:
+    Extract the map bounding box from a GPX track file.
+    The supplied file is read and all track points of the following
+    format are considered:
+    <trkpt lat="50.9816789999999" lon="14.075968"/>
+
+    All points are read and a margin of 5km in all directions is applied to
+    calculate the bounding box.
+
+
+To download the OSM map data to a Garmin eTrex30 (or compatible) device
+use the tool etrex30, available from
+https://github.com/sd2k9/tools/blob/master/etrex30
+
+etrex30 can also be called from within osmfromtrack
+
 
 License
 =======
@@ -24,25 +48,6 @@ but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
-
-osmfromtrack - Later Goal
-============
-
-Download OSM data around a GPX track
-
-Description - Later Goal
-===========
-
-You can feed the tool with a track in GPX format.
-It then fetches all the OSM data around a certain distance
-of the track.
-
-My intended usage is to feed the greated OSM files to mkgmap,
-which I can then download to my Garmin eTrex30 to have the map
-material for my next trip available.
-
-You can get etrex30 from
-https://github.com/sd2k9/tools/blob/master/etrex30
 
 Topographic Map Configuration for Debian
 ========================================
@@ -63,7 +68,6 @@ Another patch (currently unreleased) is required to invoke etrex30 from within.
 For now, remove the following line
                        "--verbatim-output-name" ],    # phyghtmap improvement not to mangle the file name
 (and replace by a single "]," )
-
 
 How to setup phyghtmap with debian (other OS may vary)
 - Get DEB packet of phyghtmap from http://katze.tfiu.de/projects/phyghtmap/
@@ -91,3 +95,7 @@ A sample call as done by osmfromtrack:
 
 Configuration can be done at the top of osmfromtrack file, look for 'topo_opts'
 
+Next Tasks
+==========
+phyghtmap
+- Get patches applied to phyghtmap development, or release forked version
