@@ -569,6 +569,23 @@ Example Call: %(prog)s data route.gpx
 
 
 # ********************************************************************************
+def get_xml_element_by_tag(xml, tag):
+    """ Generator for extracting tags by name, without caring about name space
+
+    Arguments:
+        xml: xml.etree.ElementTree to examine
+        tag: Tag text to filter for
+
+    Returns next yielded XML Element
+
+    Thanks to Stack Overflow for code snippet
+    """
+    if xml.tag.endswith(tag):
+        yield xml
+    for child in xml:
+        for g in get_xml_element_by_tag(child, tag):
+            yield g
+
 def get_bbox_from_gpx(gpxfile, coords):
     """ Extracts a bounding box from a GPX file
 
@@ -614,18 +631,14 @@ def get_bbox_from_gpx(gpxfile, coords):
             perror("Reading GPX file " + gpxfile + "failed!")
             raise
 
-
-
     # Now go through <trkpt> tags and get minimun/maximum for both lat and lon
     lat_max = -999.9
     lon_max = -999.9
     lat_min = +999.9
     lon_min = +999.9
-    # Get an iterator for all <trkpt>
-    pwarn("Warning - Using hard-coded namespace http://www.topografix.com/GPX/1/1 for XML reader - how can I ignore the namespace?")
-    trkpt_it = xml_content.iter("{http://www.topografix.com/GPX/1/1}trkpt")
+    # Iterate over all <trkpt>
     # Now do the examination
-    for trkpt in trkpt_it:
+    for trkpt in get_xml_element_by_tag(xml=xml_content.getroot(), tag='trkpt'):
         lat = float(trkpt.attrib['lat'])
         lon = float(trkpt.attrib['lon'])
         # Debug: print("lat={0}, lon={1}".format(lat, lon))
