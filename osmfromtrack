@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+# -*- mode: python; coding: utf-8 -*-
 # file name: ''osmfromtrack''
 #   project: osmfromtrack
 #  function: Download OSM data around a GPX track
@@ -221,8 +221,8 @@ def execute_cmd(*cmd, return_output=False):
        retcode = phandler.returncode
        # When not keeping program output, throw it away
        if not return_output:
-          pinfo(cmd_stdout.decode(encoding))
-          pinfo(cmd_stderr.decode(encoding))
+          pinfo(cmd_stdout.decode())
+          pinfo(cmd_stderr.decode())
           cmd_out = None
        else:
           # Combined output for returning as str
@@ -684,8 +684,13 @@ def main():
     # Get the data from the OSM XAPI
     filename_osm=None
     if opts['osm']:
-        filename_osm = get_osm_data( coords['pos1'], coords['pos2'],
-                                     coords['filebase'] + ".osm")
+        try:
+            filename_osm = get_osm_data( coords['pos1'], coords['pos2'],
+                                         coords['filebase'] + ".osm")
+        except OutputFileExists:
+           return 1 # Error already printed, that's it for us
+        except:   # Other error - hand further
+           raise
 
     # Also fetch the SRTM data when not disabled
     filename_topo=None
