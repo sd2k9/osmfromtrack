@@ -525,7 +525,7 @@ The supplied file is read and all track points of the following format are consi
 - All points are read and a margin of {margin}m in all directions is applied to
 calculate the bounding box.
 
-Example Call: %(prog)s data route.gpx
+Example Call: %(prog)s gpx data route.gpx
 """.format(margin=opts['gpx_margin'])
     cmd_gpx = cmd_subparsers.add_parser('gpx', help = cmd_gpx_help) # aliases=['file']
     cmd_gpx.add_argument('filebase', help='Output file name base - no suffix please')
@@ -621,14 +621,16 @@ def get_bbox_from_gpx(gpxfile, coords):
             raise
         # Now parse the data
         try:
-            xml_content = xml.etree.ElementTree.XML(gpxunc)
+            xml_content = xml.etree.ElementTree.XML(gpxunc)  # Element Object
         except:   # Error reading XML file
             perror("Error parsing uncompressed GPX file " + gpxfile)
             raise
     else:
         # No compression? Then just read as-is
         try:
-            xml_content = xml.etree.ElementTree.parse(gpxfile)
+            xml_content = xml.etree.ElementTree.parse(gpxfile)  # ElementTree Object
+            xml_content = xml_content.getroot()                 # Element Object
+
         except:   # Error reading XML file
             perror("Reading GPX file " + gpxfile + "failed!")
             raise
@@ -640,7 +642,8 @@ def get_bbox_from_gpx(gpxfile, coords):
     lon_min = +999.9
     # Iterate over all <trkpt>
     # Now do the examination
-    for trkpt in get_xml_element_by_tag(xml=xml_content.getroot(), tag='trkpt'):
+    # for trkpt in get_xml_element_by_tag(xml=xml_content.getroot(), tag='trkpt'):
+    for trkpt in get_xml_element_by_tag(xml=xml_content, tag='trkpt'):
         lat = float(trkpt.attrib['lat'])
         lon = float(trkpt.attrib['lon'])
         # Debug: print("lat={0}, lon={1}".format(lat, lon))
