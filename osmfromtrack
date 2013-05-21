@@ -196,11 +196,13 @@ def relax_float(string):
    # else we have succeeded
    return val
 
-def execute_cmd(*cmd, return_output=False):
+def execute_cmd(*cmd, return_output=False, also_in_testmode=False):
     """ *** Execute shell and examine error code
     1.P+: Array of command line call
     return_ouput: When True then the output is returned
                   False: Print it to shell output
+    also_in_testmode: When True also execute when running in testmode
+                      False: Only print and return 0 in Testmode
 
     Returns: Command output for return_output=True, None otherwise
     """
@@ -210,7 +212,7 @@ def execute_cmd(*cmd, return_output=False):
     try:
        # Print command to execute
        pinfo("   " + " ".join(cmd))
-       if opts['test']:   # No execution in Testmode
+       if opts['test'] and also_in_testmode==False:   # No execution in Testmode, when not requested
            return 0
        phandler = subprocess.Popen(cmd, \
                       shell=False, stdout=subprocess.PIPE,
@@ -613,7 +615,8 @@ def get_bbox_from_gpx(gpxfile, coords):
         try:
             cmd = opts['uncompress_cmd']
             cmd.append(gpxfile)
-            gpxunc = execute_cmd(*cmd, return_output=True)
+            # Must be run also in testmode, otherwise cannot continue
+            gpxunc = execute_cmd(*cmd, return_output=True, also_in_testmode=True)
         except ExecuteCommandFailed:
             raise    # Error already printed, that's it for us
         except:   # Other error
