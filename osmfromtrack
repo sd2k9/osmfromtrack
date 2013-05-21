@@ -655,13 +655,19 @@ def get_bbox_from_gpx(gpxfile, coords):
             lon_max = lon
         if lon < lon_min:
             lon_min = lon
+    pinfo("   Extracted Bounding Box: (lat, lon)=({0:f}, {1:f}) - ({2:f}, {3:f})".format(lat_min, lon_min, lat_max, lon_max) )
 
     # Basic error check
+    # All pre-defaults are overwritten with actual values?
     assert (lat_max != -999.9) and (lon_max != -999.9) and (lat_min != +999.9) and (lon_min != +999.9)
+    # Check for coordinates in bounds
+    assert (lat_max <= 90) and (lat_min >= -90)
+    assert (lon_max <= 180) and (lon_min >= -180)
 
     # Calculate margins - Thanks to Stack Overflow
     lat_margin = opts['gpx_margin'] * 360.0 / 40008000.0
-    lon_margin = opts['gpx_margin'] * 360.0 / ( 40008000.0 * math.cos( (lat_min+lat_max)/2.0) )
+    lon_margin = opts['gpx_margin'] * 360.0 / ( 40008000.0 * math.cos( math.pi * (lat_min+lat_max)/360.0) )
+    pinfo("   Calculated Margin in degrees (+-{0}m): lat=+-{1:f}, lon=+-{2:f}".format(opts['gpx_margin'], lat_margin, lon_margin) )
 
     # Assign back - with margin
     coords['pos1']  =  Coord(lat=lat_min-lat_margin, lon=lon_min-lon_margin)
