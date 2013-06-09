@@ -531,7 +531,7 @@ Example Call: %(prog)s gpx data route.gpx
 """.format(margin=opts['gpx_margin'])
     cmd_gpx = cmd_subparsers.add_parser('gpx', help = cmd_gpx_help) # aliases=['file']
     cmd_gpx.add_argument('filebase', help='Output file name base - no suffix please')
-    cmd_gpx.add_argument('gpxfile', help='Input GPX file')
+    cmd_gpx.add_argument('gpxfile', help='Input GPX file, can be xz-compressed')
     cmd_gpx.set_defaults(cmdmode='gpx')   # Return parser mode
 
     # Parse - abort on failure
