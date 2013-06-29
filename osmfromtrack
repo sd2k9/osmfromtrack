@@ -39,6 +39,8 @@ import urllib.request
 import xml.etree.ElementTree
 # cos
 import math
+# exit et al
+import sys
 
 
 # ******************************************************************************
@@ -743,4 +745,4 @@ __version__ = ''.join(filter(str.isdigit, "$LastChangedRevision$"))
 if not __version__:
     __version__='DEV'
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
