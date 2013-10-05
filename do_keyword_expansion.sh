@@ -4,7 +4,7 @@
 # release.
 # Make sure you don't commit the files AFTER keyword expansion!
 #
-# Copyright (C) 2010 Robert Lange (robert.lange@s1999.tu-chemnitz.de)
+# Copyright (C) 2010 Robert Lange <sd2k9@sethdepot.org>
 # Licensed under the GNU General Public License, version 2
 # http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 #
