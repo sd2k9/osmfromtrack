@@ -422,19 +422,22 @@ def get_topo_data(pos1, pos2, outfile):
     return routfile
 
 
-def invoke_etrex(title, shorttitle, osm, topo):
+def invoke_etrex(title, shorttitle, osm, topo, gpx):
     """Invokes etrex30 executable for the created files
 
     Arguments: title      - Map Title, see etrex30
                shorttitle - Map Short Title, see etrex30
+                            Also used as route name when a GPX file is given
                osm        - Filename OSM Data
                topo       - Filename Topographic OSM Data; None when not availabe
+               gpx        - Filename GPX Route file; None when not availabe
 
     Return: Nothing
     """
 
-    pinfo("Invoking etrex to put files an Garmim device")
 
+    # *** First: The map
+    pinfo("Invoking etrex to put map files on an Garmim device")
     # Build option array
     etrex_opts = []
     if topo is None:
@@ -451,6 +454,14 @@ def invoke_etrex(title, shorttitle, osm, topo):
 
     # Execute it
     execute_cmd(opts['etrex_cmd'], *etrex_opts )
+
+    # *** Second: The gpx file
+    if gpx:
+        pinfo("Invoking etrex to put track file on an Garmim device")
+        # Build option array
+        etrex_opts = ["puttrack", shorttitle, gpx]
+        # Execute it
+        execute_cmd(opts['etrex_cmd'], *etrex_opts )
 
     # Over and out
     pinfo("   Done!")
@@ -469,6 +480,7 @@ def parse_commandline():
         gpxfile: Input GPX file name
     For mode= 'bbox'
         pos1, pos2: Bounding box coordinates as Coord
+        gpxfile: None
     """
     # cmd_usage="usage: %prog [options] args"
     # For now, just fetch a rectangle by its coordinates
@@ -499,7 +511,9 @@ When not disabled, also the topographic data will be created.
                             default=None,
                             help='Invoke etrex30 with argument osm or topo to put the created files '
                             'on a Garmin eTrex30 device. '
-                            'First value is title, second value is shorttitle. See etrex30 help',
+                            'When a gpx file is parsed also puttrack is called to download the route. '
+                            'First value is title, second value is shorttitle/routename. '
+                            'See etrex30 help',
                             metavar="VAL")
 
     # Get object for the sub-parsers
@@ -564,6 +578,7 @@ Example Call: %(prog)s gpx data route.gpx
     if rdic['mode'] == "bbox":
          rdic['pos1']  =  Coord(cmd_line.latitude1, cmd_line.longitude1)
          rdic['pos2']  =  Coord(cmd_line.latitude2, cmd_line.longitude2)
+         rdic['gpxfile'] = None
     elif rdic['mode'] == "gpx":
          rdic['gpxfile'] = cmd_line.gpxfile
     else:
@@ -724,12 +739,14 @@ def main():
             invoke_etrex( title=opts['etrex_title_shorttitle'][0],
                           shorttitle=opts['etrex_title_shorttitle'][1],
                           osm=filename_osm,
+                          gpx=coords['gpxfile'],
                           topo=None)
         elif opts['osm'] and opts['topo']:
             # osm, topo - Full data available
             invoke_etrex( title=opts['etrex_title_shorttitle'][0],
                           shorttitle=opts['etrex_title_shorttitle'][1],
                           osm=filename_osm,
+                          gpx=coords['gpxfile'],
                           topo=filename_topo)
         else:
             perror("Something wrent wrong, this path should have been a non-entry path")
