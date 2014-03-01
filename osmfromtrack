@@ -402,8 +402,8 @@ def get_topo_data(pos1, pos2, outfile):
         with ExecTopoCmd(pos1, pos2, outfile) as topo_tool:
             pass
     except ExecuteCommandFailed:
-        # Already consumed, no more printing
-        return None
+        # Already consumed, no more printing, hand it down
+        raise
     except:
         perror("   Execution failed!")
         raise
@@ -724,8 +724,13 @@ def main():
     # Also fetch the SRTM data when not disabled
     filename_topo=None
     if opts['topo']:
-        filename_topo = get_topo_data( coords['pos1'], coords['pos2'],
+        try:
+            filename_topo = get_topo_data( coords['pos1'], coords['pos2'],
                                        coords['filebase'] + ".topo.osm")
+        except ExecuteCommandFailed:
+           return 1 # Error already printed, that's it for us
+        except:   # Other error - hand further
+           raise
 
     # Invoke etrex30 when requested
     if opts['etrex_title_shorttitle']:
