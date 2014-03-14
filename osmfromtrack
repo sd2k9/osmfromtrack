@@ -553,7 +553,7 @@ Example Call: %(prog)s gpx data route.gpx
     # Parse - abort on failure
     cmd_line = cmd_parser.parse_args()
     # When called without arguments we need to print help ourself
-    if not 'mode' in cmd_line:
+    if not 'cmdmode' in cmd_line:
         cmd_parser.print_help()
         cmd_parser.exit()
 
