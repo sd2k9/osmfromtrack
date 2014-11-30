@@ -1,0 +1,9 @@
+# Add keyword expansion filter to the following files
+# Required setup (once per repository)
+# Filter to run during checkout: Do keyword expansion
+# git config --local --add filter.keywordexpander.smudge "./do_keyword_expansion.sh expand %f"
+# Filter to run during staging: Make file clean again
+# git config --local --add filter.keywordexpander.clean  "./do_keyword_expansion.sh clean %f"
+# Problem with this: local repository is not automatically updated
+# To reflect the change you need to perform a manual checkout cycle: git checkout file
+osmfromtrack    filter=keywordexpander

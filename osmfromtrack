@@ -767,7 +767,7 @@ def main():
 
 
 # *** Call Main program
-__version__ = ''.join(filter(str.isdigit, "$LastChangedRevision$"))
+__version__ = ''.join(filter(lambda x: re.search("[0-9\.]", x), "$LastChangedRevision$"))
 if not __version__:
     __version__='DEV'
 if __name__ == "__main__":
