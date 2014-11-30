@@ -524,7 +524,7 @@ When not disabled, also the topographic data will be created.
     # Build sub parser for manual bounding box command
     cmd_bbox_help = """Supply with two set of coordinates (like from Google Map's LatLng marker)
 and the box will be fetched from OSM.
-Example: %(prog)s data 61,001 22,758 60.948 22.871 - 
+Example: %(prog)s bbox data 61,001 22,758 60.948 22.871 - 
          Yes, both English as well as German notation is allowed
 """
     cmd_bbox = cmd_subparsers.add_parser('bbox', help = cmd_bbox_help) # aliases=['coord', 'boundingbox', 'coordinates'],
