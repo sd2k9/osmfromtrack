@@ -47,9 +47,11 @@ import sys
 # *** Global settings as dictionary
 opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,east,north
         # Will be used with format()
-        # Outdated and not working anymore?
-        # 'xapi_url': 'http://open.mapquestapi.com/xapi/api/0.6/map?bbox={west:f},{south:f},{east:f},{north:f}',
-        'xapi_url': 'http://overpass.osm.rambler.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # One server
+        # 'xapi_url': 'http://overpass.osm.rambler.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # Other server
+        'xapi_url': ' http://www.overpass-api.de/api/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # Even more potential servers: https://wiki.openstreetmap.org/wiki/Xapi#Web_services_available
         # Test mode - only echo commands, will be set by command line
         'test': False,
         # Fetch OSM data - can be unset by command line
