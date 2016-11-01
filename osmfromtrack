@@ -8,7 +8,7 @@
 #  last change: $LastChangedRevision$
 #
 # Download OSM data from within a coordinate box or gpx track
-# Copyright (C) 2012, 2013 Robert Lange <sd2k9@sethdepot.org>
+# Copyright (C) 2012-2016 Robert Lange <sd2k9@sethdepot.org>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 3 as
@@ -48,9 +48,9 @@ import sys
 opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,east,north
         # Will be used with format()
         # One server
-        # 'xapi_url': 'http://overpass.osm.rambler.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        'xapi_url': 'http://overpass.osm.rambler.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Other server
-        'xapi_url': ' http://www.overpass-api.de/api/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # 'xapi_url': ' http://www.overpass-api.de/api/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Even more potential servers: https://wiki.openstreetmap.org/wiki/Xapi#Web_services_available
         # Test mode - only echo commands, will be set by command line
         'test': False,
@@ -87,9 +87,12 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         # GPX bounding box: Extra-Distance to fetch in m
         'gpx_margin': 5000,
 
-        # Invoke etrex30 afterwards when not None
-        # contains title and shorttitle as array - set by command line
-        'etrex_title_shorttitle': None,
+        # Invoke etrex30 afterwards when not None - set by command line
+        'etrex': None,
+        # Contains track title and shorttitle for the etrex30 puttrack call
+        # None when not given - set by command line
+        'etrex_track_title': None,
+        'etrex_track_shorttitle': None,
         # etrex30 executable
         'etrex_cmd': 'etrex30',
        }
@@ -424,12 +427,12 @@ def get_topo_data(pos1, pos2, outfile):
     return routfile
 
 
-def invoke_etrex(title, shorttitle, osm, topo, gpx):
+def invoke_etrex(mapname, title, shorttitle, osm, topo, gpx):
     """Invokes etrex30 executable for the created files
 
-    Arguments: title      - Map Title, see etrex30
-               shorttitle - Map Short Title, see etrex30
-                            Also used as route name when a GPX file is given
+    Arguments: mapname    - Map name for puttopo/putosm, see etrex30
+               title      - Track title, None when not given, see etrex30
+               shorttitle - Track short title, None when not given, see etrex30
                osm        - Filename OSM Data
                topo       - Filename Topographic OSM Data; None when not availabe
                gpx        - Filename GPX Route file; None when not availabe
@@ -451,8 +454,8 @@ def invoke_etrex(title, shorttitle, osm, topo, gpx):
     etrex_opts.append(osm)
     if topo is not None:
         etrex_opts.append(topo)        # Also add Topo
-    # Title names
-    etrex_opts.extend([ title, shorttitle ] )
+    # Map name
+    etrex_opts.append(mapname)
 
     # Execute it
     execute_cmd(opts['etrex_cmd'], *etrex_opts )
@@ -461,7 +464,11 @@ def invoke_etrex(title, shorttitle, osm, topo, gpx):
     if gpx:
         pinfo("Invoking etrex to put track file on an Garmim device")
         # Build option array
-        etrex_opts = ["puttrack", shorttitle, gpx]
+        etrex_opts = ["puttrack", gpx, ]
+        if title is not None:
+            etrex_opts.append(title)        # Also add title
+        if shorttitle is not None:
+            etrex_opts.append(shorttitle)        # Also add short title
         # Execute it
         execute_cmd(opts['etrex_cmd'], *etrex_opts )
 
@@ -509,13 +516,16 @@ When not disabled, also the topographic data will be created.
                         default=None, help='Change hgt cache directory for topographic map overlay, '
                                       'defaults to ' + opts['topo_hgtcache_dir'],
                             metavar="DIRECTORY")
-    cmd_parser.add_argument('-e', '--etrex', '--etrex30', dest='etrex', action='store', nargs=2,
-                            default=None,
+    cmd_parser.add_argument('--etrex', '--etrex30', '-e', dest='etrex', action='store_true', default=False,
                             help='Invoke etrex30 with argument osm or topo to put the created files '
-                            'on a Garmin eTrex30 device. '
+                            'on a Garmin eTrex30 device. The map title is filebase. '
                             'When a gpx file is parsed also puttrack is called to download the route. '
-                            'First value is title, second value is shorttitle/routename. '
-                            'See etrex30 help',
+                            'See etrex30 help')
+    cmd_parser.add_argument('--etrex-gpx-title', dest='etrex_title', action='store', nargs=2,
+                            default=None,
+                            help='Set title (first value) and shorttitle (second value) for gpx '
+                            'route download with argument --etrex. '
+                            'When not given the title is taken from the filename.',
                             metavar="VAL")
 
     # Get object for the sub-parsers
@@ -526,8 +536,8 @@ When not disabled, also the topographic data will be created.
     # Build sub parser for manual bounding box command
     cmd_bbox_help = """Supply with two set of coordinates (like from Google Map's LatLng marker)
 and the box will be fetched from OSM.
-Example: %(prog)s bbox data 61,001 22,758 60.948 22.871 - 
-         Yes, both English as well as German notation is allowed
+Both English as well as German notation is allowed.
+Example Call: %(prog)s bbox data 61,001 22,758 60.948 22.871
 """
     cmd_bbox = cmd_subparsers.add_parser('bbox', help = cmd_bbox_help) # aliases=['coord', 'boundingbox', 'coordinates'],
     cmd_bbox.add_argument('filebase', help='Output file name base - no suffix please')
@@ -575,7 +585,10 @@ Example Call: %(prog)s gpx data route.gpx
         opts['topo_hgtcache_dir'] = cmd_line.hgtdir
     # Set etrex30 arguments
     if cmd_line.etrex:
-        opts['etrex_title_shorttitle'] = cmd_line.etrex
+        opts['etrex'] = True
+    if cmd_line.etrex_title is not None:
+        opts['etrex_track_title'] = cmd_line.etrex_title[0]
+        opts['etrex_track_shorttitle'] = cmd_line.etrex_title[1]
 
     # Assign return values
     rdic = {'mode': cmd_line.cmdmode,
@@ -739,7 +752,7 @@ def main():
            raise
 
     # Invoke etrex30 when requested
-    if opts['etrex_title_shorttitle']:
+    if opts['etrex']:
         # Check for all combinations
         if not opts['osm']:
             # noosm, * - Not allowed
@@ -747,15 +760,17 @@ def main():
             pwarn("    Ignoring option --etrex")
         elif opts['osm'] and (not opts['topo']):
             # osm, notopo - No Topographic Data
-            invoke_etrex( title=opts['etrex_title_shorttitle'][0],
-                          shorttitle=opts['etrex_title_shorttitle'][1],
+            invoke_etrex( mapname=coords['filebase'],
+                          title=opts['etrex_track_title'],
+                          shorttitle=opts['etrex_track_shorttitle'],
                           osm=filename_osm,
                           gpx=coords['gpxfile'],
                           topo=None)
         elif opts['osm'] and opts['topo']:
             # osm, topo - Full data available
-            invoke_etrex( title=opts['etrex_title_shorttitle'][0],
-                          shorttitle=opts['etrex_title_shorttitle'][1],
+            invoke_etrex( mapname=coords['filebase'],
+                          title=opts['etrex_track_title'],
+                          shorttitle=opts['etrex_track_shorttitle'],
                           osm=filename_osm,
                           gpx=coords['gpxfile'],
                           topo=filename_topo)
