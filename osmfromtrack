@@ -8,7 +8,7 @@
 #  last change: $LastChangedRevision$
 #
 # Download OSM data from within a coordinate box or gpx track
-# Copyright (C) 2012-2016 Robert Lange <sd2k9@sethdepot.org>
+# Copyright (C) 2012-2016,2018 Robert Lange <sd2k9@sethdepot.org>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 3 as
@@ -48,9 +48,9 @@ import sys
 opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,east,north
         # Will be used with format()
         # One server
-        'xapi_url': 'http://overpass.osm.rambler.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # 'xapi_url': 'http://overpass.osm.rambler.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Other server
-        # 'xapi_url': ' http://www.overpass-api.de/api/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        'xapi_url': ' http://www.overpass-api.de/api/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Even more potential servers: https://wiki.openstreetmap.org/wiki/Xapi#Web_services_available
         # Test mode - only echo commands, will be set by command line
         'test': False,
@@ -256,7 +256,7 @@ def execute_cmd(*cmd, return_output=False, also_in_testmode=False):
 def coord_order(pos1, pos2):
     """Sort the coordinates into the right order
 
-    Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
+    Arguments: pos1, pos2 - Point 1 and Point 2 of coordinates (class Coord)
 
     Return: Coordinates sorted as
             (west, east, north, south)
@@ -278,10 +278,39 @@ def coord_order(pos1, pos2):
         south = pos1.lat
     return (west, east, north, south)
 
+
+def grow_bounding_box(addto_box, new_box):
+    """ Grow coords with the newly extracted bounding box
+
+    Arguments: addto_box - Existing bounding box, can be empty (key pos1 don't exist)
+               new_box - Add this bounding box to addto_box, set then addto_box is empty
+    Both arguments are dicts with keys pos1(minimum) and pos2(maximum)
+    as Bounding box coordinates of class Coord
+
+    Return: None
+    """
+    if not 'pos1' in addto_box:
+        # Bounding box is  empty, so just copy the values from the new bounding box
+        addto_box['pos1'] = new_box['pos1']
+        addto_box['pos2'] = new_box['pos2']
+    else:
+        # We need to update the bounding box when the new values are outside
+        # Mimimum values
+        if  addto_box['pos1'].lat > new_box['pos1'].lat:
+            addto_box['pos1'].lat = new_box['pos1'].lat
+        if  addto_box['pos1'].lon > new_box['pos1'].lon:
+            addto_box['pos1'].lon = new_box['pos1'].lon
+        # Maximum values
+        if  addto_box['pos2'].lat < new_box['pos2'].lat:
+            addto_box['pos2'].lat = new_box['pos2'].lat
+        if  addto_box['pos2'].lon < new_box['pos2'].lon:
+            addto_box['pos2'].lon = new_box['pos2'].lon
+
+
 def get_osm_data(pos1, pos2, outfile):
     """Download OSM data from a box into a file
 
-    Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
+    Arguments: pos1, pos2 - Point 1 and Point 2 of coordinates (class Coord)
               outfile - Output file name, to write the OSM data to
 
     Return: Output file name (can be modified by compression)
@@ -318,7 +347,6 @@ def get_osm_data(pos1, pos2, outfile):
     except:
         perr('Failing to open output file ' + outfile)
         raise
-
 
     try:
         # Open the URL
@@ -395,7 +423,7 @@ def compress_file(cfile):
 def get_topo_data(pos1, pos2, outfile):
     """Create OSM Topographic data from a box into a file
 
-    Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
+    Arguments: pos1, pos2 - Point 1 and Point 2 of coordinates (class Coord)
               outfile - Output file name
 
     Return: Output file name (can be modified by compression)
@@ -435,11 +463,16 @@ def invoke_etrex(mapname, title, shorttitle, osm, topo, gpx):
                shorttitle - Track short title, None when not given, see etrex30
                osm        - Filename OSM Data
                topo       - Filename Topographic OSM Data; None when not availabe
-               gpx        - Filename GPX Route file; None when not availabe
+               gpx        - Array of GPX Route filename(s); None when not availabe
+                            When multiple files are given, title and shorttitle must be None
 
     Return: Nothing
     """
 
+    # *** Basic argument checking
+    # When multiple gpx are given, title and shorttitle must be None
+    if (gpx is not None) and (len(gpx) > 1):
+        assert (title is None) and (shorttitle is  None)
 
     # *** First: The map
     pinfo("Invoking etrex to put map files on an Garmim device")
@@ -460,17 +493,18 @@ def invoke_etrex(mapname, title, shorttitle, osm, topo, gpx):
     # Execute it
     execute_cmd(opts['etrex_cmd'], *etrex_opts )
 
-    # *** Second: The gpx file
+    # *** Second: The gpx file(s)
     if gpx:
-        pinfo("Invoking etrex to put track file on an Garmim device")
-        # Build option array
-        etrex_opts = ["puttrack", gpx, ]
-        if title is not None:
-            etrex_opts.append(title)        # Also add title
-        if shorttitle is not None:
-            etrex_opts.append(shorttitle)        # Also add short title
-        # Execute it
-        execute_cmd(opts['etrex_cmd'], *etrex_opts )
+        for gpxfile in gpx:
+            pinfo("Invoking etrex to put track file {file:s} on an Garmim device".format(file=gpxfile))
+            # Build option array
+            etrex_opts = ["puttrack", gpxfile, ]
+            if title is not None:
+                etrex_opts.append(title)        # Also add title
+            if shorttitle is not None:
+                etrex_opts.append(shorttitle)        # Also add short title
+            # Execute it
+            execute_cmd(opts['etrex_cmd'], *etrex_opts )
 
     # Over and out
     pinfo("   Done!")
@@ -486,14 +520,14 @@ def parse_commandline():
     filebase - Output file base
     mode - either 'gpx' or 'bbox'
     For mode='gpx':
-        gpxfile: Input GPX file name
+        gpxfiles: Array of input GPX file name(s)
     For mode= 'bbox'
         pos1, pos2: Bounding box coordinates as Coord
-        gpxfile: None
+        gpxfiles: None
     """
     # cmd_usage="usage: %prog [options] args"
     # For now, just fetch a rectangle by its coordinates
-    cmd_desc ="""Download OSM data from a coordinate box or around a gpx file track.
+    cmd_desc ="""Download OSM data from a coordinate box or around gpx file track(s).
 When not disabled, also the topographic data will be created.
 """
     # cmd_desc ="""osmfromtrack - Download OSM data around a GPX track"""
@@ -519,25 +553,27 @@ When not disabled, also the topographic data will be created.
     cmd_parser.add_argument('--etrex', '--etrex30', '-e', dest='etrex', action='store_true', default=False,
                             help='Invoke etrex30 with argument osm or topo to put the created files '
                             'on a Garmin eTrex30 device. The map title is filebase. '
-                            'When a gpx file is parsed also puttrack is called to download the route. '
+                            'When gpx file(s) are parsed also puttrack is called to download the routes. '
                             'See etrex30 help')
     cmd_parser.add_argument('--etrex-gpx-title', dest='etrex_title', action='store', nargs=2,
                             default=None,
                             help='Set title (first value) and shorttitle (second value) for gpx '
                             'route download with argument --etrex. '
+                            'Not allowed when using multiple GPX files. '
                             'When not given the title is taken from the filename.',
                             metavar="VAL")
 
+
     # Get object for the sub-parsers
     cmd_subparsers = cmd_parser.add_subparsers(title='Operation Modes',
-                        description='Use coordinates or GPX file for bounding box generation.\nGet subcommand help with "%(prog)s subcommand --help"')
+                        description='Use coordinates or GPX file(s) for bounding box generation.\nGet subcommand help with "%(prog)s subcommand --help"')
     #                   help='additional help')
 
     # Build sub parser for manual bounding box command
     cmd_bbox_help = """Supply with two set of coordinates (like from Google Map's LatLng marker)
 and the box will be fetched from OSM.
 Both English as well as German notation is allowed.
-Example Call: %(prog)s bbox data 61,001 22,758 60.948 22.871
+Example Call: %(prog)s bbox filebase 61,001 22,758 60.948 22.871
 """
     cmd_bbox = cmd_subparsers.add_parser('bbox', help = cmd_bbox_help) # aliases=['coord', 'boundingbox', 'coordinates'],
     cmd_bbox.add_argument('filebase', help='Output file name base - no suffix please')
@@ -548,18 +584,18 @@ Example Call: %(prog)s bbox data 61,001 22,758 60.948 22.871
     cmd_bbox.set_defaults(cmdmode='bbox')   # Return parser mode
 
     # Build sub parser for gpx file parsing
-    cmd_gpx_help = """Extract the map bounding box from a GPX track file.
-The supplied file is read and all track points of the following format are considered:
+    cmd_gpx_help = """Extract the map bounding box from GPX track file(s).
+The supplied files are read and all track points of the following format are considered:
     <trkpt lat="50.9816789999999" lon="14.075968"/>
 
 - All points are read and a margin of {margin}m in all directions is applied to
 calculate the bounding box.
 
-Example Call: %(prog)s gpx data route.gpx
+Example Call: %(prog)s gpx filebase route1.gpx route2.gpx
 """.format(margin=opts['gpx_margin'])
     cmd_gpx = cmd_subparsers.add_parser('gpx', help = cmd_gpx_help) # aliases=['file']
     cmd_gpx.add_argument('filebase', help='Output file name base - no suffix please')
-    cmd_gpx.add_argument('gpxfile', help='Input GPX file, can be xz-compressed')
+    cmd_gpx.add_argument('gpxfiles', nargs='+', help='Input GPX file(s), can be xz-compressed')
     cmd_gpx.set_defaults(cmdmode='gpx')   # Return parser mode
 
     # Parse - abort on failure
@@ -587,6 +623,9 @@ Example Call: %(prog)s gpx data route.gpx
     if cmd_line.etrex:
         opts['etrex'] = True
     if cmd_line.etrex_title is not None:
+        if cmd_line.cmdmode=="gpx" and len(cmd_line.gpxfiles) > 1:
+            # Not allowed for multi-gpx
+            cmd_parser.error("Argument --etrex-gpx-title not allowed with multiple gpx files!")
         opts['etrex_track_title'] = cmd_line.etrex_title[0]
         opts['etrex_track_shorttitle'] = cmd_line.etrex_title[1]
 
@@ -597,9 +636,9 @@ Example Call: %(prog)s gpx data route.gpx
     if rdic['mode'] == "bbox":
          rdic['pos1']  =  Coord(cmd_line.latitude1, cmd_line.longitude1)
          rdic['pos2']  =  Coord(cmd_line.latitude2, cmd_line.longitude2)
-         rdic['gpxfile'] = None
+         rdic['gpxfiles'] = None
     elif rdic['mode'] == "gpx":
-         rdic['gpxfile'] = cmd_line.gpxfile
+         rdic['gpxfiles'] = cmd_line.gpxfiles
     else:
        perror("Unknown command line parsing mode found! Something went wrong herre!")
        raise RuntimeError
@@ -643,7 +682,7 @@ def get_bbox_from_gpx(gpxfile, coords):
     """
 
     # Open the file and read it in
-    pinfo("Extracting bounding box from " + coords['gpxfile'] + " ...")
+    pinfo("Extracting bounding box from " + gpxfile + " ...")
     # Is it compresssed?
     if opts['uncompress_match'].search(gpxfile):
         # Yes, so we need to uncompress it
@@ -723,11 +762,15 @@ def main():
     # *** Command line parsing
     coords = parse_commandline()
 
-    # When "gpx" is requested, then we need to fetch the coordinates from the file
+    # When "gpx" is requested, then we need to fetch the coordinates from the file(s)
     if coords['mode'] == 'gpx':
-        # Need to get it from GPX file, yeah
-        get_bbox_from_gpx(gpxfile=coords['gpxfile'], coords=coords)
-        # Debug         print(coords)
+        # Need to get it from GPX file(s), yeah
+        gpxcoords = {}           # Temporary coordinates from file
+        for gpxfile in coords['gpxfiles']:
+            get_bbox_from_gpx(gpxfile=gpxfile, coords=gpxcoords)
+            # Grow coords with the newly extracted bounding box
+            grow_bounding_box(addto_box=coords, new_box=gpxcoords)
+
 
     # Get the data from the OSM XAPI
     filename_osm=None
@@ -764,7 +807,7 @@ def main():
                           title=opts['etrex_track_title'],
                           shorttitle=opts['etrex_track_shorttitle'],
                           osm=filename_osm,
-                          gpx=coords['gpxfile'],
+                          gpx=coords['gpxfiles'],
                           topo=None)
         elif opts['osm'] and opts['topo']:
             # osm, topo - Full data available
@@ -772,7 +815,7 @@ def main():
                           title=opts['etrex_track_title'],
                           shorttitle=opts['etrex_track_shorttitle'],
                           osm=filename_osm,
-                          gpx=coords['gpxfile'],
+                          gpx=coords['gpxfiles'],
                           topo=filename_topo)
         else:
             perror("Something wrent wrong, this path should have been a non-entry path")
