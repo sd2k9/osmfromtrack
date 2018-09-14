@@ -688,7 +688,8 @@ def get_bbox_from_gpx(gpxfile, coords):
         # Yes, so we need to uncompress it
         pinfo("   Compressed file found - will uncompress it")
         try:
-            cmd = opts['uncompress_cmd']
+            # Copy list by value, not only assign a reference
+            cmd = list(opts['uncompress_cmd'])
             cmd.append(gpxfile)
             # Must be run also in testmode, otherwise cannot continue
             gpxunc = execute_cmd(*cmd, return_output=True, also_in_testmode=True)
@@ -768,8 +769,13 @@ def main():
         gpxcoords = {}           # Temporary coordinates from file
         for gpxfile in coords['gpxfiles']:
             get_bbox_from_gpx(gpxfile=gpxfile, coords=gpxcoords)
+            # Debug
+            # print("DEBUG: gpxcoords=", gpxcoords)
+            # print("DEBUG: coords/pre=", coords)
             # Grow coords with the newly extracted bounding box
             grow_bounding_box(addto_box=coords, new_box=gpxcoords)
+            # Debug
+            # print("DEBUG: coords/post=", coords)
 
 
     # Get the data from the OSM XAPI
