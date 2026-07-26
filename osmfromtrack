@@ -50,7 +50,13 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         # One server
         # 'xapi_url': 'http://overpass.osm.rambler.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Other server
-        'xapi_url': ' http://www.overpass-api.de/api/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # 'xapi_url': 'http://www.overpass-api.de/api/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # Other server
+        # 'xapi_url': 'http://overpass.openstreetmap.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # Other server
+        # 'xapi_url': 'http://www.overpass-api.de/api/xapi_meta?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # Other server
+        'xapi_url': 'https://overpass.private.coffee/api/xapi_meta?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Even more potential servers: https://wiki.openstreetmap.org/wiki/Xapi#Web_services_available
         # Test mode - only echo commands, will be set by command line
         'test': False,
