@@ -5,10 +5,9 @@
 #  function: Download OSM data around a GPX track
 #
 #      created: 2012-08-18
-#  last change: $LastChangedRevision$
 #
 # Download OSM data from within a coordinate box or gpx track
-# Copyright (C) 2012-2016,2018 Robert Lange <sd2k9@sethdepot.org>
+# Copyright (C) 2012-2016,2018,2026 Robert Lange <sd2k9@sethdepot.org>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 3 as
@@ -839,8 +838,6 @@ def main():
 
 
 # *** Call Main program
-__version__ = ''.join(filter(lambda x: re.search("[0-9\.]", x), "$LastChangedRevision$"))
-if not __version__:
-    __version__='DEV'
+__version__ = '1.0.1'
 if __name__ == "__main__":
     sys.exit(main())
