@@ -49,16 +49,20 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         # One server
         # 'xapi_url': 'http://overpass.osm.rambler.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Other server
-        # 'xapi_url': 'http://www.overpass-api.de/api/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        'xapi_url': 'http://www.overpass-api.de/api/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Other server
         # 'xapi_url': 'http://overpass.openstreetmap.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Other server
         # 'xapi_url': 'http://www.overpass-api.de/api/xapi_meta?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Other server
-        'xapi_url': 'https://overpass.private.coffee/api/xapi_meta?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # 'xapi_url': 'https://overpass.private.coffee/api/xapi_meta?map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Even more potential servers: https://wiki.openstreetmap.org/wiki/Xapi#Web_services_available
         # Test mode - only echo commands, will be set by command line
         'test': False,
+        # User-Agent string for HTTP requests to the Overpass API
+        'user_agent': 'osmfromtrack/1.0 (https://github.com/sd2k9/osmfromtrack)',
+        # Referrer string for HTTP requests to the Overpass API
+        'referrer': 'https://github.com/sd2k9/osmfromtrack',
         # Fetch OSM data - can be unset by command line
         'osm': True,
         # Create Topographic map - can be unset by command line
@@ -87,7 +91,7 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         # Command for inline uncompression with default options: xz
         'uncompress_cmd': [ 'xz', '-d', '--stdout'],
         # Regexp to find compressed file
-        'uncompress_match': re.compile('\.xz$'),
+        'uncompress_match': re.compile(r'\.xz$'),
 
         # GPX bounding box: Extra-Distance to fetch in m
         'gpx_margin': 5000,
@@ -359,7 +363,14 @@ def get_osm_data(pos1, pos2, outfile):
         pinfo("   and writing it to file " + outfile)
         pinfo("   This will take a while ...")
         if not opts['test']:  # Not in testmode
-              url = urllib.request.urlopen(url_str)
+              # Build request with configurable headers
+              req = urllib.request.Request(url_str)
+              if opts['user_agent']:
+                  req.add_header('User-Agent', opts['user_agent'])
+              if opts['referrer']:
+                  # HTTP header name is intentionally "Referer"
+                  req.add_header('Referer', opts['referrer'])
+              url = urllib.request.urlopen(req)
     except:
         perror('Opening the XAPI-URL failed: ' + url_str )
         raise
