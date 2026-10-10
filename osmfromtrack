@@ -34,6 +34,7 @@ import os
 import subprocess
 # Fetching OSM Data
 import urllib.request
+import urllib.error
 # XML parsing
 import xml.etree.ElementTree
 # cos
@@ -44,18 +45,14 @@ import sys
 
 # ******************************************************************************
 # *** Global settings as dictionary
-opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,east,north
+opts = {# URL of the Overpass API endpoint to fetch OSM data from, with coords west,south,east,north
         # Will be used with format()
-        # One server
-        # 'xapi_url': 'http://overpass.osm.rambler.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
-        # Other server
-        'xapi_url': 'http://www.overpass-api.de/api/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
-        # Other server
-        # 'xapi_url': 'http://overpass.openstreetmap.ru/cgi/xapi?map?bbox={west:f},{south:f},{east:f},{north:f}',
-        # Other server
-        # 'xapi_url': 'http://www.overpass-api.de/api/xapi_meta?map?bbox={west:f},{south:f},{east:f},{north:f}',
-        # Other server
-        # 'xapi_url': 'https://overpass.private.coffee/api/xapi_meta?map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # Primary server
+        'overpass_url': 'https://overpass-api.de/api/map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # Other servers (examples)
+        # 'overpass_url': 'https://overpass.openstreetmap.ru/api/map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # 'overpass_url': 'https://overpass.private.coffee/api/map?bbox={west:f},{south:f},{east:f},{north:f}',
+        # 'overpass_url': 'http://overpass.osm.rambler.ru/cgi/api/map?bbox={west:f},{south:f},{east:f},{north:f}',
         # Even more potential servers: https://wiki.openstreetmap.org/wiki/Xapi#Web_services_available
         # Test mode - only echo commands, will be set by command line
         'test': False,
@@ -63,6 +60,8 @@ opts = { # URL of the XAPI to fetch OSM data from, with its coords west,south,ea
         'user_agent': 'osmfromtrack/1.0 (https://github.com/sd2k9/osmfromtrack)',
         # Referrer string for HTTP requests to the Overpass API
         'referrer': 'https://github.com/sd2k9/osmfromtrack',
+        # HTTP timeout in seconds
+        'overpass_timeout': 60,
         # Fetch OSM data - can be unset by command line
         'osm': True,
         # Create Topographic map - can be unset by command line
@@ -113,15 +112,20 @@ perror = logging.error
 
 
 # ******************************************************************************
-# *** Exception Objects - they should be improved to also include the error reason
+# *** Exception Objects
 
-class OutputFileExists(BaseException):
-    """Exception Class for existing output file
-    """
+class OutputFileExists(Exception):
+    """Exception Class for existing output file"""
     pass
-class ExecuteCommandFailed(BaseException):
-    """Exception Class for failed program execution
-    """
+
+
+class ExecuteCommandFailed(Exception):
+    """Exception Class for failed program execution"""
+    pass
+
+
+class OutputFileNotCreated(Exception):
+    """Exception Class for missing expected output file"""
     pass
 
 
@@ -174,21 +178,15 @@ class ExecTopoCmd():
            execute_cmd(*cmd)
        except ExecuteCommandFailed:
            raise    # Error already printed, that's it for us
-       except:   # Other error
+       except Exception:
            perror("   Execution failed!")
            raise
 
        return self
 
    # End of with processing - kinda destructor
-   def __exit__(self, type, value, traceback):
+   def __exit__(self, exc_type, value, traceback):
        pass
-
-
-
-
-
-
 
 
 # ******************************************************************************
@@ -206,19 +204,21 @@ def relax_float(string):
    rstring = re.sub(',', '.', string)
    try:  # Now try the conversion
      val = float(rstring)
-   except:   # Error, we have failed
+   except Exception:   # Error, we have failed
        msg = "{0} is no float value".format(string)
        raise argparse.ArgumentTypeError(msg)
    # else we have succeeded
    return val
 
 def execute_cmd(*cmd, return_output=False, also_in_testmode=False):
-    """ *** Execute shell and examine error code
-    1.P+: Array of command line call
-    return_ouput: When True then the output is returned
-                  False: Print it to shell output
-    also_in_testmode: When True also execute when running in testmode
-                      False: Only print and return 0 in Testmode
+    """Execute command and examine error code.
+
+    Arguments:
+      *cmd: command + arguments as separate strings
+      return_output: When True then command output is returned
+                     False: Print it to shell output
+      also_in_testmode: When True execute even in test mode
+                        False: Only print and skip in test mode
 
     Returns: Command output for return_output=True, None otherwise
     """
@@ -228,34 +228,43 @@ def execute_cmd(*cmd, return_output=False, also_in_testmode=False):
     try:
        # Print command to execute
        pinfo("   " + " ".join(cmd))
-       if opts['test'] and also_in_testmode==False:   # No execution in Testmode, when not requested
-           return 0
-       phandler = subprocess.Popen(cmd, \
-                      shell=False, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
-       # Catch program output and error out
-       cmd_stdout, cmd_stderr = phandler.communicate()
-       # Return code
-       retcode = phandler.returncode
-       # When not keeping program output, throw it away
+       if opts['test'] and (not also_in_testmode):   # No execution in test mode, when not requested
+           return "" if return_output else None
+
+       result = subprocess.run(
+           cmd,
+           shell=False,
+           stdout=subprocess.PIPE,
+           stderr=subprocess.PIPE,
+           text=True,
+           check=False
+       )
+
+       cmd_stdout = result.stdout
+       cmd_stderr = result.stderr
+       retcode = result.returncode
+
+       # When not keeping program output, print it
        if not return_output:
-          pinfo(cmd_stdout.decode())
-          pinfo(cmd_stderr.decode())
+          if cmd_stdout:
+              pinfo(cmd_stdout)
+          if cmd_stderr:
+              pinfo(cmd_stderr)
           cmd_out = None
        else:
           # Combined output for returning as str
-          cmd_out = (cmd_stdout + cmd_stderr).decode()
+          cmd_out = cmd_stdout + cmd_stderr
 
        if retcode < 0:
            perror("   cmd {0} was terminated by signal {1} ".format(cmd, str(-retcode)))
            raise ExecuteCommandFailed()
        elif retcode > 0:
-           perror("   cmd {0} retunred error code {1} ".format(cmd, str(retcode)))
+           perror("   cmd {0} returned error code {1} ".format(cmd, str(retcode)))
            raise ExecuteCommandFailed()
     except OSError as e:
         perror("   cmd {0} execution failed: {1}".format(cmd, str(e)))
         raise ExecuteCommandFailed()
-    except:
+    except Exception:
        raise   # Other errors are passed further
 
 
@@ -298,13 +307,13 @@ def grow_bounding_box(addto_box, new_box):
 
     Return: None
     """
-    if not 'pos1' in addto_box:
-        # Bounding box is  empty, so just copy the values from the new bounding box
+    if 'pos1' not in addto_box:
+        # Bounding box is empty, so just copy the values from the new bounding box
         addto_box['pos1'] = new_box['pos1']
         addto_box['pos2'] = new_box['pos2']
     else:
         # We need to update the bounding box when the new values are outside
-        # Mimimum values
+        # Minimum values
         if  addto_box['pos1'].lat > new_box['pos1'].lat:
             addto_box['pos1'].lat = new_box['pos1'].lat
         if  addto_box['pos1'].lon > new_box['pos1'].lon:
@@ -341,71 +350,42 @@ def get_osm_data(pos1, pos2, outfile):
     # Preprocessing - match coords to box boundaries
     (west, east, north, south) = coord_order(pos1, pos2)
     # The URL constructed
-    url_str = opts['xapi_url'].format(west=west, east=east, north=north, south=south)
+    url_str = opts['overpass_url'].format(west=west, east=east, north=north, south=south)
 
-    # Check for existing outfile - Attention race condition because of later open!
-    if os.path.isfile(outfile):
-        perror("File " + outfile + " exists already - Aborting")
-        raise OutputFileExists
+    pinfo("Fetching OSM data from URL\n   " + url_str)
+    pinfo("   and writing it to file " + outfile)
+    pinfo("   This will take a while ...")
 
-    # Open output file
-    try:
-        # Open output file - binary write
-        if not opts['test']:  # Not in testmode
-            out = open(outfile, 'wb')
-    except:
-        perr('Failing to open output file ' + outfile)
-        raise
+    if not opts['test']:  # Not in test mode
+        try:
+            # Build request with configurable headers
+            req = urllib.request.Request(url_str)
+            if opts['user_agent']:
+                req.add_header('User-Agent', opts['user_agent'])
+            if opts['referrer']:
+                # HTTP header name is intentionally "Referer"
+                req.add_header('Referer', opts['referrer'])
 
-    try:
-        # Open the URL
-        pinfo("Fetching OSM data from URL\n   " + url_str)
-        pinfo("   and writing it to file " + outfile)
-        pinfo("   This will take a while ...")
-        if not opts['test']:  # Not in testmode
-              # Build request with configurable headers
-              req = urllib.request.Request(url_str)
-              if opts['user_agent']:
-                  req.add_header('User-Agent', opts['user_agent'])
-              if opts['referrer']:
-                  # HTTP header name is intentionally "Referer"
-                  req.add_header('Referer', opts['referrer'])
-              url = urllib.request.urlopen(req)
-    except:
-        perror('Opening the XAPI-URL failed: ' + url_str )
-        raise
+            # Use exclusive create mode to prevent accidental overwrite / race
+            with urllib.request.urlopen(req, timeout=opts['overpass_timeout']) as url, open(outfile, 'xb') as out:
+                # Stream in chunks to avoid loading large responses in memory
+                while True:
+                    chunk = url.read(64 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
 
-    try:
-        # Write to file - with nice progress bar thanks to
-        # http://stackoverflow.com/questions/22676/how-do-i-download-a-file-over-http-using-python
-        if not opts['test']:  # Not in testmode
-            out.write(url.read())
-            # Progress bar not working as expected because of chunked transfer
-            # meta = url.info()
-            # print meta
-            # file_size = int(meta.getheaders("Content-Length")[0])
-            # print file_size
-            # return
-            # pinfo("   Downloading: {0:s} Bytes: {1:s}".format(file_name, file_size) )
-            # file_size_dl = 0
-            # block_sz = 8192
-            # while True:
-            #     buffer = url.read(block_sz)
-            #     if not buffer:
-            #         break
-            # file_size_dl += len(buffer)
-            # out.write(buffer)
-            # status = r"%10d  [%3.2f%%]" % (file_size_dl, file_size_dl * 100. / file_size)
-            # status = status + chr(8)*(len(status)+1)
-            # pinfo("   " + status)
-    except:
-        perror('Reading data and writing to the file failed!')
-        raise
-
-    # Cleanup
-    if not opts['test']:  # Not in testmode
-        url.close()
-        out.close()
+        except FileExistsError:
+            perror("File " + outfile + " exists already - Aborting")
+            raise OutputFileExists
+        except urllib.error.URLError:
+            perror("Opening the Overpass URL failed: " + url_str)
+            raise
+        except OSError:
+            perror("Reading data and writing to the file failed!")
+            raise
+        except Exception:
+            raise
 
     # Do compression, when requested
     routfile = compress_file(outfile)
@@ -430,7 +410,7 @@ def compress_file(cfile):
         execute_cmd(opts['compress_cmd'], cfile )
     except ExecuteCommandFailed:
         raise    # Error already printed, that's it for us
-    except:   # Other error
+    except Exception:   # Other error
         perror("   Execution failed!")
         raise
     return cfile + ".xz"
@@ -448,20 +428,20 @@ def get_topo_data(pos1, pos2, outfile):
     # Call Sub-Program with the help of a context manager
     pinfo("Creating topographic map data with " + opts['topo_cmd'])
     try:
-        with ExecTopoCmd(pos1, pos2, outfile) as topo_tool:
+        with ExecTopoCmd(pos1, pos2, outfile):
             pass
     except ExecuteCommandFailed:
         # Already consumed, no more printing, hand it down
         raise
-    except:
+    except Exception:
         perror("   Execution failed!")
         raise
 
     # Check that output file got created
     if not opts['test']:  # Not in testmode
         if not os.path.isfile(outfile):
-            perror("Expected output file " + outfile + " did not got created - Aborting")
-            raise OutputFilekNotCreated
+            perror("Expected output file " + outfile + " was not created - Aborting")
+            raise OutputFileNotCreated
 
     # Do compression, when requested
     routfile = compress_file(outfile)
@@ -478,24 +458,21 @@ def invoke_etrex(mapname, title, shorttitle, osm, topo, gpx):
                title      - Track title, None when not given, see etrex30
                shorttitle - Track short title, None when not given, see etrex30
                osm        - Filename OSM Data
-               topo       - Filename Topographic OSM Data; None when not availabe
-               gpx        - Array of GPX Route filename(s); None when not availabe
+               topo       - Filename Topographic OSM Data; None when not available
+               gpx        - Array of GPX Route filename(s); None when not available
                             When multiple files are given, title and shorttitle must be None
 
     Return: Nothing
     """
+    # Basic argument checking
+    if (gpx is not None) and (len(gpx) > 1) and ((title is not None) or (shorttitle is not None)):
+        raise ValueError("title/shorttitle are not allowed with multiple GPX files")
 
-    # *** Basic argument checking
-    # When multiple gpx are given, title and shorttitle must be None
-    if (gpx is not None) and (len(gpx) > 1):
-        assert (title is None) and (shorttitle is  None)
-
-    # *** First: The map
-    pinfo("Invoking etrex to put map files on an Garmim device")
-    # Build option array
+    # First: The map
+    pinfo("Invoking etrex to put map files on a Garmin device")
     etrex_opts = []
     if topo is None:
-        etrex_opts.append("putosm")  # Only OSM
+        etrex_opts.append("putosm")   # Only OSM
     else:
         etrex_opts.append("puttopo")  # OSM and Topo
 
@@ -581,12 +558,16 @@ When not disabled, also the topographic data will be created.
 
 
     # Get object for the sub-parsers
-    cmd_subparsers = cmd_parser.add_subparsers(title='Operation Modes',
-                        description='Use coordinates or GPX file(s) for bounding box generation.\nGet subcommand help with "%(prog)s subcommand --help"')
-    #                   help='additional help')
+    cmd_subparsers = cmd_parser.add_subparsers(
+        title='Operation Modes',
+        description='Use coordinates or GPX file(s) for bounding box generation.\n'
+                    'Get subcommand help with "%(prog)s subcommand --help"',
+        dest='cmdmode',
+        required=True
+    )
 
     # Build sub parser for manual bounding box command
-    cmd_bbox_help = """Supply with two set of coordinates (like from Google Map's LatLng marker)
+    cmd_bbox_help = """Supply with two sets of coordinates (like from Google Map's LatLng marker)
 and the box will be fetched from OSM.
 Both English as well as German notation is allowed.
 Example Call: %(prog)s bbox filebase 61,001 22,758 60.948 22.871
@@ -641,7 +622,7 @@ Example Call: %(prog)s gpx filebase route1.gpx route2.gpx
     if cmd_line.etrex_title is not None:
         if cmd_line.cmdmode=="gpx" and len(cmd_line.gpxfiles) > 1:
             # Not allowed for multi-gpx
-            cmd_parser.error("Argument --etrex-gpx-title not allowed with multiple gpx files!")
+            cmd_parser.error("Argument --etrex-gpx-title not allowed with multiple GPX files!")
         opts['etrex_track_title'] = cmd_line.etrex_title[0]
         opts['etrex_track_shorttitle'] = cmd_line.etrex_title[1]
 
@@ -656,7 +637,7 @@ Example Call: %(prog)s gpx filebase route1.gpx route2.gpx
     elif rdic['mode'] == "gpx":
          rdic['gpxfiles'] = cmd_line.gpxfiles
     else:
-       perror("Unknown command line parsing mode found! Something went wrong herre!")
+       perror("Unknown command line parsing mode found! Something went wrong here!")
        raise RuntimeError
 
     # Fertig
@@ -711,13 +692,13 @@ def get_bbox_from_gpx(gpxfile, coords):
             gpxunc = execute_cmd(*cmd, return_output=True, also_in_testmode=True)
         except ExecuteCommandFailed:
             raise    # Error already printed, that's it for us
-        except:   # Other error
+        except Exception:
             perror("   Execution failed!")
             raise
         # Now parse the data
         try:
             xml_content = xml.etree.ElementTree.XML(gpxunc)  # Element Object
-        except:   # Error reading XML file
+        except Exception:
             perror("Error parsing uncompressed GPX file " + gpxfile)
             raise
     else:
@@ -726,11 +707,11 @@ def get_bbox_from_gpx(gpxfile, coords):
             xml_content = xml.etree.ElementTree.parse(gpxfile)  # ElementTree Object
             xml_content = xml_content.getroot()                 # Element Object
 
-        except:   # Error reading XML file
+        except Exception:   # Error reading XML file
             perror("Reading GPX file " + gpxfile + "failed!")
             raise
 
-    # Now go through <trkpt> tags and get minimun/maximum for both lat and lon
+    # Now go through <trkpt> tags and get minimum/maximum for both lat and lon
     lat_max = -999.9
     lon_max = -999.9
     lat_min = +999.9
@@ -802,26 +783,28 @@ def main():
                                          coords['filebase'] + ".osm")
         except OutputFileExists:
            return 1 # Error already printed, that's it for us
-        except:   # Other error - hand further
+        except Exception:
            raise
 
     # Also fetch the SRTM data when not disabled
     filename_topo=None
     if opts['topo']:
         try:
-            filename_topo = get_topo_data( coords['pos1'], coords['pos2'],
-                                       coords['filebase'] + ".topo.osm")
-        except ExecuteCommandFailed:
-           return 1 # Error already printed, that's it for us
-        except:   # Other error - hand further
-           raise
+            filename_topo = get_topo_data(
+                coords['pos1'], coords['pos2'],
+                coords['filebase'] + ".topo.osm"
+            )
+        except (ExecuteCommandFailed, OutputFileNotCreated):
+            return 1  # Error already printed
+        except Exception:
+            raise
 
     # Invoke etrex30 when requested
     if opts['etrex']:
         # Check for all combinations
         if not opts['osm']:
             # noosm, * - Not allowed
-            pwarn("OSM data creation disabled, therefore no garmin Download possible.")
+            pwarn("OSM data creation disabled, therefore no Garmin download possible.")
             pwarn("    Ignoring option --etrex")
         elif opts['osm'] and (not opts['topo']):
             # osm, notopo - No Topographic Data
@@ -840,7 +823,7 @@ def main():
                           gpx=coords['gpxfiles'],
                           topo=filename_topo)
         else:
-            perror("Something wrent wrong, this path should have been a non-entry path")
+            perror("Something went wrong, this path should have been a non-entry path")
             raise AssertionError
 
     # All done, over and out
