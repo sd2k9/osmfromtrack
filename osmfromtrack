@@ -131,6 +131,11 @@ class OutputFileExists(Exception):
     pass
 
 
+class OverpassRequestFailed(Exception):
+    """Exception Class for a failed Overpass request (message already printed)"""
+    pass
+
+
 class ExecuteCommandFailed(Exception):
     """Exception Class for failed program execution"""
     pass
@@ -380,9 +385,25 @@ def get_osm_data(pos1, pos2, outfile):
         except FileExistsError:
             perror("File " + outfile + " exists already - Aborting")
             raise OutputFileExists
-        except urllib.error.URLError:
-            perror("Opening the Overpass URL failed: " + url_str)
-            raise
+        except urllib.error.HTTPError as err:
+            perror("Overpass server answered with HTTP error {0} ({1})".format(err.code, err.reason))
+            perror("   URL: " + url_str)
+            if err.code == 406:
+                perror("   The server rejected the request headers - check 'user_agent' and 'referrer' in opts")
+            elif err.code == 429:
+                perror("   Too many requests - wait a few minutes or try another 'overpass_url'")
+            elif err.code in (502, 503, 504):
+                perror("   Server overloaded or temporarily down - try again later or "
+                       "use another 'overpass_url'")
+            raise OverpassRequestFailed
+        except urllib.error.URLError as err:
+            perror("Could not reach the Overpass server: {0}".format(err.reason))
+            perror("   URL: " + url_str)
+            raise OverpassRequestFailed
+        except TimeoutError:
+            perror("Overpass request timed out after {0}s - try again later "
+                   "or increase 'overpass_timeout'".format(opts['overpass_timeout']))
+            raise OverpassRequestFailed
         except OSError:
             perror("Reading data and writing to the file failed!")
             raise
@@ -972,7 +993,7 @@ def main():
         try:
             filename_osm = get_osm_data( coords['pos1'], coords['pos2'],
                                          coords['filebase'] + ".osm")
-        except OutputFileExists:
+        except (OutputFileExists, OverpassRequestFailed):
            return 1 # Error already printed, that's it for us
         except Exception:
            raise
