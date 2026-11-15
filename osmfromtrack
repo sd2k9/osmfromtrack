@@ -41,6 +41,10 @@ import xml.etree.ElementTree
 import math
 # exit et al
 import sys
+# Temporary directories
+import tempfile
+# Move/copy files
+import shutil
 
 
 # ******************************************************************************
@@ -68,21 +72,29 @@ opts = {# URL of the Overpass API endpoint to fetch OSM data from, with coords w
         'topo': True,
         # Compress files - can be unset by command line
         'compress': True,
-        # Default hgt cache directory - can be changed by command line
-        'topo_hgtcache_dir': os.path.expanduser("~") + "/.cache/hgt",
 
-        # Command for Topographic Map creation: phyghtmap
-        'topo_cmd': 'phyghtmap',
-        # Default options for phyghtmap
-        'topo_opts': [ "--step=50",
-                      "--line-cat=400,100", "--jobs=2", "--viewfinder-mask=1",
-                       "--verbatim-output-name" ],    # phyghtmap improvement not to mangle the file name
-        # Custom hgt cache directory, will be used with format()
-        'topo_opts_hgtcache': '--hgtdir={dir:s}',
-        # Area to process, will be used with format()
-        'topo_opts_area': '--area={west:f}:{south:f}:{east:f}:{north:f}',
-        # Output base file name, will be used with format()
-        'topo_opts_output': '-o{outfile:s}',
+        # Directory to cache the downloaded elevation tiles - can be set by command line
+        # None: Do not cache, read the tiles remotely
+        'topo_hgtcache_dir': None,
+
+        # Topographic map creation from the Copernicus DEM, needs the Debian packages
+        # gdal-bin, python3-gdal and python3-pyosmium
+        # Base URL of the elevation tiles (30 m, public AWS bucket, no account required)
+        'topo_dem_base': 'https://copernicus-dem-30m.s3.amazonaws.com',
+        # Resolution code used inside the tile names: 10 = 1 arc second (30 m)
+        'topo_dem_code': 10,
+        # Elevation difference between contour lines in m
+        'topo_interval': 50,
+        # Major / medium contour lines are every n m, all other lines are minor
+        'topo_major': 500,
+        'topo_medium': 100,
+        # Simplification tolerance of the contour lines in degrees
+        # (0.0001 is about 10 m), 0 = no simplification
+        'topo_simplify': 0.00005,
+        # Maximum number of nodes per OSM way (OSM limit)
+        'topo_max_way_nodes': 2000,
+        # Timeout for elevation tile requests in seconds
+        'topo_timeout': 60,
 
         # Command for compression with default options: xz
         'compress_cmd': 'xz',
@@ -119,6 +131,11 @@ class OutputFileExists(Exception):
     pass
 
 
+class OverpassRequestFailed(Exception):
+    """Exception Class for a failed Overpass request (message already printed)"""
+    pass
+
+
 class ExecuteCommandFailed(Exception):
     """Exception Class for failed program execution"""
     pass
@@ -145,12 +162,11 @@ class Coord():
    # lon
 
 class ExecTopoCmd():
-   """Execute the topographic map creation tool
+   """Create the topographic map data (contour lines) for a bounding box
 
    Should be used together with the "with" statement:
         with ExecTopoCmd() as topo_tool:
             pass
-   Why "with"? Just for fun and playing around with it ^_^
 
    C'tor Arguments: pos1, pos2 - Point1 and Point 2 of coordinates (class Coord)
              outfile - Output file name, to write the OSM data to
@@ -161,21 +177,13 @@ class ExecTopoCmd():
    def __init__(self, pos1, pos2, outfile):
        # Preprocessing - match coords to box boundaries
        (self._west, self._east, self._north, self._south) = coord_order(pos1, pos2)
-       # And store filebase
+       # And store file name
        self._outfile = outfile
 
    # Start of with processing
    def __enter__(self):
-       # Call to  phyghtmap with default arguments (see opts) and the
-       # --area=LEFT:BOTTOM:RIGHT:TOP and -o output_base
-
-       # Then execute it
        try:
-           cmd = [ opts['topo_cmd'] ] + opts['topo_opts'] + \
-              [ opts['topo_opts_area'].format(west=self._west, east=self._east, north=self._north, south=self._south), 
-                opts['topo_opts_hgtcache'].format(dir=opts['topo_hgtcache_dir']),
-                opts['topo_opts_output'].format(outfile=self._outfile) ]
-           execute_cmd(*cmd)
+           create_topo_osm(self._west, self._south, self._east, self._north, self._outfile)
        except ExecuteCommandFailed:
            raise    # Error already printed, that's it for us
        except Exception:
@@ -187,7 +195,6 @@ class ExecTopoCmd():
    # End of with processing - kinda destructor
    def __exit__(self, exc_type, value, traceback):
        pass
-
 
 # ******************************************************************************
 # *** Functions
@@ -378,9 +385,25 @@ def get_osm_data(pos1, pos2, outfile):
         except FileExistsError:
             perror("File " + outfile + " exists already - Aborting")
             raise OutputFileExists
-        except urllib.error.URLError:
-            perror("Opening the Overpass URL failed: " + url_str)
-            raise
+        except urllib.error.HTTPError as err:
+            perror("Overpass server answered with HTTP error {0} ({1})".format(err.code, err.reason))
+            perror("   URL: " + url_str)
+            if err.code == 406:
+                perror("   The server rejected the request headers - check 'user_agent' and 'referrer' in opts")
+            elif err.code == 429:
+                perror("   Too many requests - wait a few minutes or try another 'overpass_url'")
+            elif err.code in (502, 503, 504):
+                perror("   Server overloaded or temporarily down - try again later or "
+                       "use another 'overpass_url'")
+            raise OverpassRequestFailed
+        except urllib.error.URLError as err:
+            perror("Could not reach the Overpass server: {0}".format(err.reason))
+            perror("   URL: " + url_str)
+            raise OverpassRequestFailed
+        except TimeoutError:
+            perror("Overpass request timed out after {0}s - try again later "
+                   "or increase 'overpass_timeout'".format(opts['overpass_timeout']))
+            raise OverpassRequestFailed
         except OSError:
             perror("Reading data and writing to the file failed!")
             raise
@@ -416,6 +439,189 @@ def compress_file(cfile):
     return cfile + ".xz"
 
 
+def dem_tile_names(west, south, east, north):
+    """Names of the 1x1 degree elevation tiles which cover a bounding box
+
+    Return: List of tile names, e.g. Copernicus_DSM_COG_10_N33_00_E132_00_DEM
+    """
+    names = []
+    # ceil: A box edge exactly on a whole degree does not need the next tile
+    for lat in range(math.floor(south), math.ceil(north)):
+        for lon in range(math.floor(west), math.ceil(east)):
+            names.append("Copernicus_DSM_COG_{code:d}_{ns:s}{alat:02d}_00_{ew:s}{alon:03d}_00_DEM".format(
+                code=opts['topo_dem_code'],
+                ns="S" if lat < 0 else "N", alat=abs(lat),
+                ew="W" if lon < 0 else "E", alon=abs(lon)))
+    return names
+
+
+def dem_request(url, method='GET'):
+    """HTTP request for an elevation tile with the configured headers"""
+    req = urllib.request.Request(url, method=method)
+    if opts['user_agent']:
+        req.add_header('User-Agent', opts['user_agent'])
+    if opts['referrer']:
+        req.add_header('Referer', opts['referrer'])
+    return req
+
+
+def fetch_dem_tile(name):
+    """Locate an elevation tile
+
+    Arguments: name - Tile name, see dem_tile_names()
+
+    Return: File name usable by GDAL - either remote (/vsicurl/) or in the cache
+            directory; None when the tile does not exist (ocean or not public)
+    """
+    url = "{base}/{name}/{name}.tif".format(base=opts['topo_dem_base'], name=name)
+    if opts['test']:
+        return "/vsicurl/" + url             # No network access in test mode
+
+    cachedir = opts['topo_hgtcache_dir']
+    try:
+        if cachedir is None:
+            # Remote mode: Only check that the tile exists, GDAL reads what it needs
+            urllib.request.urlopen(dem_request(url, 'HEAD'), timeout=opts['topo_timeout']).close()
+            return "/vsicurl/" + url
+        # Cache mode: Download the tile once
+        local = os.path.join(cachedir, name + ".tif")
+        if os.path.isfile(local):
+            return local
+        os.makedirs(cachedir, exist_ok=True)
+        pinfo("   Downloading elevation tile " + name)
+        part = local + ".part"
+        with urllib.request.urlopen(dem_request(url), timeout=opts['topo_timeout']) as src, \
+             open(part, 'wb') as dst:
+            shutil.copyfileobj(src, dst)
+        os.replace(part, local)
+        return local
+    except urllib.error.HTTPError as err:
+        # Missing tiles are reported as 403 or 404 by this bucket
+        if err.code in (403, 404):
+            return None
+        raise
+
+
+def write_contours_osm(infile, outfile):
+    """Convert contour lines with an "ele" attribute into an OSM file
+
+    The lines are tagged for the mkgmap default style:
+    contour=elevation, ele=<m>, contour_ext=elevation_major/medium/minor
+
+    Arguments: infile  - GDAL readable file with the contour lines
+               outfile - OSM file to write, must not exist
+    """
+    pinfo("   Writing contour lines to OSM file " + outfile)
+    if opts['test']:
+        return
+    # Imported here, so these modules are only needed for topographic maps
+    try:
+        import osmium
+        from osgeo import ogr
+    except ImportError as err:
+        perror("   Cannot import module {0} - install the Debian packages "
+               "python3-gdal and python3-pyosmium".format(err.name))
+        raise ExecuteCommandFailed()
+    ogr.UseExceptions()
+
+    ds = ogr.Open(infile)                # Keep the reference, or the layer dies
+    layer = ds.GetLayer(0)
+    writer = osmium.SimpleWriter(outfile)
+    nid = wid = -1                       # Negative IDs for generated data
+    maxnodes = opts['topo_max_way_nodes']
+
+    for feat in layer:
+        ele = int(round(feat.GetField("ele")))
+        if ele % opts['topo_major'] == 0:
+            cat = "elevation_major"
+        elif ele % opts['topo_medium'] == 0:
+            cat = "elevation_medium"
+        else:
+            cat = "elevation_minor"
+        tags = {"contour": "elevation", "ele": str(ele), "contour_ext": cat}
+
+        geom = feat.GetGeometryRef()
+        if geom.GetGeometryName() == "LINESTRING":
+            lines = [geom]
+        else:
+            lines = [geom.GetGeometryRef(i) for i in range(geom.GetGeometryCount())]
+
+        for line in lines:
+            pts = [(p[0], p[1]) for p in line.GetPoints()]   # (lon, lat)
+            closed = pts[0] == pts[-1]
+            if closed:
+                pts = pts[:-1]
+            refs = []
+            for lon, lat in pts:
+                writer.add_node(osmium.osm.mutable.Node(id=nid, location=(lon, lat)))
+                refs.append(nid)
+                nid -= 1
+            if closed:
+                refs.append(refs[0])
+            # Split into ways of at most maxnodes nodes, sharing the boundary node
+            i = 0
+            # Sanity check for following while loop
+            if opts['topo_max_way_nodes'] < 2:
+                raise ValueError("topo_max_way_nodes must be at least 2")
+            while i < len(refs) - 1:
+                writer.add_way(osmium.osm.mutable.Way(id=wid, nodes=refs[i:i + maxnodes], tags=tags))
+                wid -= 1
+                i += maxnodes - 1
+
+    writer.close()
+    ds = None
+
+
+def create_topo_osm(west, south, east, north, outfile):
+    """Create contour lines for a bounding box as OSM file
+
+    Steps: Locate elevation tiles, clip them to the box, generate the contour
+    lines, simplify them and write them as OSM file.
+    Needs the Debian packages gdal-bin, python3-gdal and python3-pyosmium.
+
+    Arguments: west, south, east, north - Bounding box in degrees
+               outfile - Output file name
+    """
+    # Find the tiles
+    tiles = []
+    for name in dem_tile_names(west, south, east, north):
+        tile = fetch_dem_tile(name)
+        if tile is None:
+            pinfo("   Elevation tile " + name + " not available (ocean or not public) - skipping")
+        else:
+            tiles.append(tile)
+    if not tiles:
+        perror("   No elevation tiles found for this bounding box")
+        raise ExecuteCommandFailed()
+
+    # Work in a temporary directory, which is removed again
+    with tempfile.TemporaryDirectory(prefix="osmfromtrack-") as tmp:
+        vrt = os.path.join(tmp, "dem.vrt")
+        area = os.path.join(tmp, "area.tif")
+        contours = os.path.join(tmp, "contours.gpkg")
+        simplified = os.path.join(tmp, "contours_simple.gpkg")
+        osmtmp = os.path.join(tmp, "topo.osm")
+
+        # Combine the tiles and clip to the box (-projwin: west north east south)
+        execute_cmd("gdalbuildvrt", "-q", vrt, *tiles)
+        execute_cmd("gdal_translate", "-q", "-projwin",
+                    "{0:.8f}".format(west), "{0:.8f}".format(north),
+                    "{0:.8f}".format(east), "{0:.8f}".format(south), vrt, area)
+        # Contour lines
+        execute_cmd("gdal_contour", "-a", "ele", "-i", str(opts['topo_interval']),
+                    "-f", "GPKG", "-nln", "contour", area, contours)
+        # Simplify them
+        if opts['topo_simplify'] > 0:
+            execute_cmd("ogr2ogr", "-q", "-f", "GPKG", "-nln", "contour",
+                        "-simplify", "{0:.8f}".format(opts['topo_simplify']),
+                        simplified, contours, "contour")
+            contours = simplified
+        # Write the result into the temporary directory first, no partial output file
+        write_contours_osm(contours, osmtmp)
+        if not opts['test']:
+            shutil.move(osmtmp, outfile)
+
+
 def get_topo_data(pos1, pos2, outfile):
     """Create OSM Topographic data from a box into a file
 
@@ -425,8 +631,13 @@ def get_topo_data(pos1, pos2, outfile):
     Return: Output file name (can be modified by compression)
     """
 
+    # Never overwrite an existing file
+    if os.path.exists(outfile):
+        perror(f"File {outfile} exists already - Aborting")
+        raise OutputFileExists
+
     # Call Sub-Program with the help of a context manager
-    pinfo("Creating topographic map data with " + opts['topo_cmd'])
+    pinfo(f"Creating topographic map data from {opts['topo_dem_base']}")
     try:
         with ExecTopoCmd(pos1, pos2, outfile):
             pass
@@ -540,8 +751,9 @@ When not disabled, also the topographic data will be created.
     cmd_parser.add_argument('--no-compress', dest='compress', action='store_false',
                         default=True, help='Do not compress output files with ' + opts['compress_cmd'] )
     cmd_parser.add_argument('--hgtdir', dest='hgtdir', action='store',
-                        default=None, help='Change hgt cache directory for topographic map overlay, '
-                                      'defaults to ' + opts['topo_hgtcache_dir'],
+                        default=None, help='Cache the downloaded elevation tiles for the topographic '
+                                      'map overlay in this directory. Without this option the tiles '
+                                      'are read remotely and nothing is cached',
                             metavar="DIRECTORY")
     cmd_parser.add_argument('--etrex', '--etrex30', '-e', dest='etrex', action='store_true', default=False,
                             help='Invoke etrex30 with argument osm or topo to put the created files '
@@ -775,18 +987,18 @@ def main():
             # print("DEBUG: coords/post=", coords)
 
 
-    # Get the data from the OSM XAPI
+    # Get the data from the OSM Overpass API
     filename_osm=None
     if opts['osm']:
         try:
             filename_osm = get_osm_data( coords['pos1'], coords['pos2'],
                                          coords['filebase'] + ".osm")
-        except OutputFileExists:
+        except (OutputFileExists, OverpassRequestFailed):
            return 1 # Error already printed, that's it for us
         except Exception:
            raise
 
-    # Also fetch the SRTM data when not disabled
+    # Also fetch the topo data when not disabled
     filename_topo=None
     if opts['topo']:
         try:
@@ -794,7 +1006,7 @@ def main():
                 coords['pos1'], coords['pos2'],
                 coords['filebase'] + ".topo.osm"
             )
-        except (ExecuteCommandFailed, OutputFileNotCreated):
+        except (ExecuteCommandFailed, OutputFileNotCreated, OutputFileExists):
             return 1  # Error already printed
         except Exception:
             raise

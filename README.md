@@ -9,16 +9,13 @@ State
 =====
 Usable
 
-For topographic map data a patched version of phyghtmap
-is required (see below)
-
 
 Description
 ===========
 Bounding Box Mode:  
     Supply with two set of coordinates (like from Google Map's LatLng marker)
     and the box will be fetched from OSM.  
-    Example: osmfromtrack data 61,001 22,758 60.948 22.871
+    Example: osmfromtrack bbox data 61,001 22,758 60.948 22.871
 
 GPX File Mode:  
     Extract the map bounding box from a GPX track file.
@@ -51,46 +48,40 @@ GNU General Public License for more details.
 Topographic Map Configuration for Debian
 ========================================
 See also  
-    http://wiki.openstreetmap.org/wiki/Topographic_maps_for_garmin_devices
+https://wiki.openstreetmap.org/wiki/OSM_Map_On_Garmin/Topographic_maps
 
-To create a topographic map you need the tool phyghtmap.
-If you don't want this, just use the command line option "--no-topo"
+The topographic overlay (contour lines) is created from the Copernicus DEM
+(30 m resolution, https://registry.opendata.aws/copernicus-dem/). The elevation
+tiles are read directly from a public AWS bucket, no account is required.
+If you don't want a topographic map, use the command line option "--no-topo".
 
-For the current version  1.43-1 you also need to apply the following patch
-to being able to set the hgt cache directory:  
-http://wiki.openstreetmap.org/wiki/User:Edamame/PatchPhyghtmapHgtDir  
-If not wanted, just remove the line  
-"opts['topo_opts_hgtcache'].format(dir=opts['topo_hgtcache_dir']),"  
-from the execute_cmd code
+Please note that Copernicus GLO-30 is a digital surface model (DSM),
+not a bare-earth digital terrain model (DTM).  
+It can include buildings, infrastructure and vegetation in the represented surface. 
 
-Another patch (currently unreleased) is required to invoke etrex30 from within.  
-For now, remove the following line  
-                       "--verbatim-output-name" ],    # phyghtmap improvement not to mangle the file name  
-(and replace by a single "]," )
+Required Debian packages:  
+    sudo apt install gdal-bin python3-gdal python3-pyosmium
 
-How to setup phyghtmap with debian (other OS may vary)
-- Get DEB packet of phyghtmap from http://katze.tfiu.de/projects/phyghtmap/  
-  e.g. http://katze.tfiu.de/projects/phyghtmap/phyghtmap_1.43-1_all.deb
-- Install, e.g.  
-  sudo dpkg -i  phyghtmap_1.43-1_all.deb
-- For Version 1.43 you manually need to repair some things
-- If you get the error  
-  File "/usr/bin/phyghtmap", line 5, in &lt;module&gt;  
-    from pkg_resources import load_entry_point  
-  ImportError: No module named pkg_resources  
-  Solution: sudo aptitude install python-pkg-resources
-- If you get the error  
-  File "/usr/lib/python2.7/dist-packages/pkg_resources.py", line 584, in resolve  
-    raise DistributionNotFound(req)  
-    pkg_resources.DistributionNotFound: phyghtmap==1.43  
-  Solution:  
-  - cd ../../python2.7/dist-packages/
-  - sudo ln -s ../../python2.6/dist-packages/phyghtmap
-  - sudo ln -s ../../python2.6/dist-packages/phyghtmap-1.43.egg-info/
+How it works
+- The 1x1 degree elevation tiles covering the bounding box are located.
+  Tiles which do not exist (ocean, or countries not in the public 30 m data)
+  are skipped; when no tile exists at all, osmfromtrack aborts.
+- The tiles are clipped to the box and contour lines are generated (gdal_contour).
+- The lines are simplified (ogr2ogr) and written as <filebase>.topo.osm.
+- Lines are tagged contour=elevation, ele=<meters> and
+  contour_ext=elevation_major/medium/minor, as expected by the mkgmap default
+  style. Note that this style labels the lines in feet.
 
-A sample call as done by osmfromtrack:  
-  phyghtmap --area=9.755300:47.478000:9.804400:47.502600 --step=50 -o srtmtest \  
-  --line-cat=400,100 --jobs=2  --viewfinder-mask=1
+Tile caching  
+By default the tiles are read remotely and nothing is stored. To keep the
+downloaded tiles for later runs use --hgtdir DIRECTORY.
 
-Configuration can be done at the top of osmfromtrack file, look for 'topo_opts' .
+Configuration  
+Done at the top of the osmfromtrack file, look for the opts entries 'topo_*':
+- topo\_interval:  Contour line distance in m (default 50)  
+- topo\_major, topo\_medium:  Major/medium line every n m (default 500 and 100)
+- topo_simplify:  Simplification tolerance in degrees, 0.0001 is about 10 m,
+  0 disables it (default 0.00005)
+- topo\_dem_base, topo\_dem\_code:  Elevation data source (default 30 m tiles)
 
+Please check the Copernicus DEM license terms before distributing maps.
